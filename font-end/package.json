@@ -1,0 +1,25 @@
+{
+  "name": "practice-hub-frontend",
+  "version": "1.0.0",
+  "description": "考研刷题小程序前端",
+  "main": "main.js",
+  "scripts": {
+    "dev:h5": "uni",
+    "dev:mp-weixin": "uni -p mp-weixin",
+    "build:h5": "uni build",
+    "build:mp-weixin": "uni build -p mp-weixin"
+  },
+  "dependencies": {
+    "pinia": "^2.1.7",
+    "vue": "^3.4.21",
+    "vue-i18n": "^9.8.0"
+  },
+  "devDependencies": {
+    "@dcloudio/types": "^3.4.8",
+    "@dcloudio/vite-plugin-uni": "^3.0.0-alpha-4080720251125001",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "sass": "^1.77.8",
+    "vite": "^5.2.8"
+  }
+}
+

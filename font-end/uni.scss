@@ -1,0 +1,79 @@
+// 全局样式变量
+$primary-color: #e74c3c; // 深红色主题
+$secondary-color: #3498db; // 考研蓝
+$success-color: #2ecc71;
+$warning-color: #f39c12;
+$error-color: #e74c3c;
+$text-color: #333333;
+$text-color-secondary: #666666;
+$text-color-disabled: #999999;
+$border-color: #e5e5e5;
+$bg-color: #f8f8f8;
+$white: #ffffff;
+
+// 布局
+$page-padding: 32rpx;
+$card-radius: 16rpx;
+$button-radius: 8rpx;
+
+// 字体
+$font-size-base: 28rpx;
+$font-size-lg: 32rpx;
+$font-size-sm: 24rpx;
+$font-size-xs: 20rpx;
+
+// 间距
+$spacing-xs: 8rpx;
+$spacing-sm: 16rpx;
+$spacing-md: 24rpx;
+$spacing-lg: 32rpx;
+$spacing-xl: 48rpx;
+
+// 数字字体（用于倒计时和分数）
+@font-face {
+  font-family: 'DIN';
+  src: url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+}
+
+// 通用类
+.page-container {
+  padding: $page-padding;
+  background-color: $bg-color;
+  min-height: 100vh;
+}
+
+.card {
+  background-color: $white;
+  border-radius: $card-radius;
+  padding: $spacing-lg;
+  margin-bottom: $spacing-md;
+}
+
+.flex {
+  display: flex;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.text-primary {
+  color: $primary-color;
+}
+
+.text-secondary {
+  color: $text-color-secondary;
+}
+
+.text-center {
+  text-align: center;
+}
+
