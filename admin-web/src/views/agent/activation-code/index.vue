@@ -30,16 +30,25 @@
           />
         </a-form-item>
         <a-form-item label="状态">
-          <a-select
+            <a-select
             v-model:value="searchForm.status"
             placeholder="请选择"
             style="width: 150px"
             allow-clear
           >
-            <a-select-option value="pending">待使用</a-select-option>
-            <a-select-option value="used">已使用</a-select-option>
-            <a-select-option value="expired">已过期</a-select-option>
+            <a-select-option :value="0">待使用</a-select-option>
+            <a-select-option :value="1">已使用</a-select-option>
+            <a-select-option :value="2">已作废</a-select-option>
           </a-select>
+        </a-form-item>
+        <a-form-item label="生成用户">
+          <a-input
+            v-model:value="searchForm.generatorUser"
+            placeholder="请输入生成用户"
+            allow-clear
+            style="width: 160px"
+            @pressEnter="handleSearch"
+          />
         </a-form-item>
         <a-form-item>
           <a-button type="primary" @click="handleSearch">查询</a-button>
@@ -47,11 +56,17 @@
         </a-form-item>
       </a-form>
 
+      <div class="table-toolbar">
+        <TableColumnSetting :items="settingItems" @update:items="updatePreference" @reset="resetColumns" />
+      </div>
+
       <a-table
-        :columns="columns"
+        class="activation-code-table"
+        :columns="displayColumns"
         :data-source="dataSource"
         :loading="loading"
         :pagination="pagination"
+        :scroll="{ x: 1280 }"
         @change="handleTableChange"
         row-key="id"
       >
@@ -71,39 +86,76 @@
           <template v-else-if="column.key === 'status'">
             <a-tag
               :color="
-                record.status === 'pending'
+                record.status === 0
                   ? 'blue'
-                  : record.status === 'used'
+                  : record.status === 1
                   ? 'green'
                   : 'red'
               "
             >
               {{
-                record.status === 'pending'
+                record.status === 0
                   ? '待使用'
-                  : record.status === 'used'
+                  : record.status === 1
                   ? '已使用'
-                  : '已过期'
+                  : '已作废'
               }}
             </a-tag>
           </template>
-          <template v-else-if="column.key === 'activatedUser'">
-            <span v-if="record.activatedUser">
-              {{ maskNickname(record.activatedUser) }}
+          <template v-else-if="column.key === 'used_time'">
+            <span v-if="record.used_time" class="time-cell">
+              {{ dayjs(record.used_time).format('YYYY-MM-DD HH:mm:ss') }}
             </span>
             <span v-else>-</span>
           </template>
+          <template v-else-if="column.key === 'create_time'">
+            <span class="time-cell">{{ dayjs(record.create_time).format('YYYY-MM-DD HH:mm:ss') }}</span>
+          </template>
+          <template v-else-if="column.key === 'courseName'">
+            <div class="course-name-cell" :title="record.course?.name || record.courseName || '-'">
+              {{ record.course?.name || record.courseName || '-' }}
+            </div>
+          </template>
           <template v-else-if="column.key === 'action'">
-            <a-space>
+            <div class="activation-code-actions">
               <a-button
-                v-if="record.status === 'pending'"
+                type="link"
+                size="small"
+                @click="handleViewDetail(record)"
+              >
+                <template #icon><EyeOutlined /></template>
+                详情
+              </a-button>
+              <a-button
+                v-if="record.status === 0"
                 type="link"
                 size="small"
                 @click="handleExport(record)"
               >
                 导出
               </a-button>
-            </a-space>
+              <a-popconfirm
+                v-if="record.status === 1"
+                title="禁用后会撤销该用户的课程权限，确定继续吗？"
+                ok-text="确定禁用"
+                cancel-text="取消"
+                @confirm="handleInvalidate(record)"
+              >
+                <a-button type="link" size="small" danger>
+                  禁用
+                </a-button>
+              </a-popconfirm>
+              <a-button
+                v-if="record.status === 0"
+                type="link"
+                size="small"
+                danger
+                @click="handleDelete(record)"
+              >
+                <template #icon><DeleteOutlined /></template>
+                删除
+              </a-button>
+            </div>
           </template>
         </template>
       </a-table>
@@ -119,20 +171,124 @@
       v-model:open="buyModalVisible"
       @success="handleRefresh"
     />
+
+    <!-- 统计卡片 -->
+    <a-row :gutter="16" style="margin-top: 16px">
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="总数" :value="statistics.total" />
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="待使用" :value="statistics.pending" value-style="color: #1890ff" />
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="已使用" :value="statistics.used" value-style="color: #52c41a" />
+        </a-card>
+      </a-col>
+      <a-col :span="6">
+        <a-card>
+          <a-statistic title="已作废" :value="statistics.invalid" value-style="color: #ff4d4f" />
+        </a-card>
+      </a-col>
+    </a-row>
+
+    <!-- 详情弹窗 -->
+    <a-modal
+      v-model:open="detailModalVisible"
+      title="激活码详情"
+      width="600px"
+      :footer="null"
+    >
+      <a-descriptions v-if="currentDetail" :column="2" bordered>
+        <a-descriptions-item label="激活码">
+          <span>{{ currentDetail.code }}</span>
+          <a-button
+            type="link"
+            size="small"
+            style="margin-left: 8px"
+            @click="handleCopy(currentDetail.code)"
+          >
+            复制
+          </a-button>
+        </a-descriptions-item>
+        <a-descriptions-item label="批次号">
+          {{ currentDetail.batch_id }}
+        </a-descriptions-item>
+        <a-descriptions-item label="批次前缀">
+          {{ currentDetail.batch_prefix || getBatchPrefix(currentDetail.batch_id) }}
+        </a-descriptions-item>
+        <a-descriptions-item label="生成来源">
+          {{ currentDetail.source_text || getSourceText(currentDetail) }}
+        </a-descriptions-item>
+        <a-descriptions-item label="生成用户">
+          {{ currentDetail.generator_user || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="关联课程">
+          {{ currentDetail.course?.name || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="状态">
+          <a-tag
+            :color="
+              currentDetail.status === 0
+                ? 'blue'
+                : currentDetail.status === 1
+                ? 'green'
+                : 'red'
+            "
+          >
+            {{
+              currentDetail.status === 0
+                ? '待使用'
+                : currentDetail.status === 1
+                ? '已使用'
+                : '已作废'
+            }}
+          </a-tag>
+        </a-descriptions-item>
+        <a-descriptions-item label="创建时间">
+          {{ dayjs(currentDetail.create_time).format('YYYY-MM-DD HH:mm:ss') }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if="currentDetail.used_time" label="激活时间">
+          {{ dayjs(currentDetail.used_time).format('YYYY-MM-DD HH:mm:ss') }}
+        </a-descriptions-item>
+      </a-descriptions>
+    </a-modal>
+
+    <!-- 删除确认弹窗 -->
+    <a-modal
+      v-model:open="deleteModalVisible"
+      title="删除激活码"
+      :confirm-loading="deleteLoading"
+      @ok="confirmDelete"
+      @cancel="handleCancelDelete"
+    >
+      <p>确定要删除这条激活码吗？删除后无法恢复。</p>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, ShoppingCartOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ShoppingCartOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons-vue'
 import { useUserStore } from '@/store/user'
+import dayjs from 'dayjs'
 import {
   getActivationCodeList,
-  exportActivationCodes,
-} from '@/api/agent'
+	  exportActivationCodes,
+	  deleteActivationCode,
+	  invalidateActivationCode,
+	  getActivationCodeStatistics,
+	  getActivationCodeDetail,
+	} from '@/api/agent'
 import GenerateModal from './components/GenerateModal.vue'
 import BuyModal from './components/BuyModal.vue'
+import TableColumnSetting from '@/components/TableColumnSetting/index.vue'
+import { useTableColumns } from '@/composables/useTableColumns'
 
 const userStore = useUserStore()
 const isSuperAdmin = computed(() => userStore.hasRole('super_admin'))
@@ -141,10 +297,22 @@ const loading = ref(false)
 const dataSource = ref([])
 const generateModalVisible = ref(false)
 const buyModalVisible = ref(false)
+const statistics = ref({
+  total: 0,
+  pending: 0,
+  used: 0,
+  invalid: 0,
+})
+const detailModalVisible = ref(false)
+const currentDetail = ref<any>(null)
+const deleteModalVisible = ref(false)
+const deletingId = ref<number | null>(null)
+const deleteLoading = ref(false)
 
 const searchForm = ref({
   batchNo: undefined,
   status: undefined,
+  generatorUser: undefined as string | undefined,
 })
 
 const pagination = ref({
@@ -153,21 +321,40 @@ const pagination = ref({
   total: 0,
 })
 
-const columns = [
+const baseColumns = [
   {
     title: '激活码',
     key: 'code',
     width: 200,
   },
+	  {
+	    title: '批次号',
+	    dataIndex: 'batch_id',
+	    key: 'batch_id',
+	  },
+	  {
+	    title: '前缀',
+	    dataIndex: 'batch_prefix',
+	    key: 'batch_prefix',
+	    width: 90,
+	  },
+	  {
+	    title: '生成来源',
+	    dataIndex: 'source_text',
+	    key: 'source_text',
+	    width: 130,
+	  },
+	  {
+	    title: '生成用户',
+	    dataIndex: 'generator_user',
+	    key: 'generator_user',
+	    width: 120,
+	  },
   {
-    title: '批次号',
-    dataIndex: 'batchNo',
-    key: 'batchNo',
-  },
-  {
-    title: '关联题库',
-    dataIndex: 'subjectName',
-    key: 'subjectName',
+    title: '关联课程',
+    dataIndex: 'courseName',
+    key: 'courseName',
+    width: 300,
   },
   {
     title: '状态',
@@ -175,28 +362,38 @@ const columns = [
     width: 100,
   },
   {
-    title: '激活人',
-    key: 'activatedUser',
-    width: 120,
-  },
-  {
     title: '激活时间',
-    dataIndex: 'activatedAt',
-    key: 'activatedAt',
-    width: 180,
+    dataIndex: 'used_time',
+    key: 'used_time',
+    width: 90,
   },
   {
-    title: '操作',
-    key: 'action',
-    width: 100,
+    title: '创建时间',
+    dataIndex: 'create_time',
+    key: 'create_time',
+    width: 90,
   },
-]
+	  {
+	    title: '操作',
+	    key: 'action',
+	    width: 110,
+      fixed: 'right',
+	  },
+	]
+
+const { displayColumns, settingItems, resetColumns, updatePreference } = useTableColumns(
+  'agent-activation-code-list',
+  baseColumns,
+  { lockRightKeys: ['action'] },
+)
 
 const fetchData = async () => {
   loading.value = true
   try {
     const res = await getActivationCodeList({
-      ...searchForm.value,
+      batchNo: searchForm.value.batchNo,
+      status: searchForm.value.status,
+      generatorUser: searchForm.value.generatorUser || undefined,
       page: pagination.value.current,
       pageSize: pagination.value.pageSize,
     })
@@ -206,6 +403,15 @@ const fetchData = async () => {
     message.error('获取激活码列表失败')
   } finally {
     loading.value = false
+  }
+}
+
+const fetchStatistics = async () => {
+  try {
+    const res = await getActivationCodeStatistics()
+    statistics.value = res.data
+  } catch (error) {
+    console.error('获取统计信息失败:', error)
   }
 }
 
@@ -224,6 +430,7 @@ const handleReset = () => {
   searchForm.value = {
     batchNo: undefined,
     status: undefined,
+    generatorUser: undefined,
   }
   handleSearch()
 }
@@ -241,16 +448,65 @@ const handleCopy = (code: string) => {
   message.success('已复制到剪贴板')
 }
 
+const handleViewDetail = async (record: any) => {
+  try {
+    const res = await getActivationCodeDetail(record.id)
+    currentDetail.value = res.data
+    detailModalVisible.value = true
+  } catch (error: any) {
+    message.error(error?.message || '获取详情失败')
+  }
+}
+
+	const handleDelete = (record: any) => {
+	  deletingId.value = record.id
+	  deleteModalVisible.value = true
+	}
+
+	const handleInvalidate = async (record: any) => {
+	  try {
+	    await invalidateActivationCode(record.id)
+	    message.success('已禁用并撤销课程权限')
+	    fetchData()
+	    fetchStatistics()
+	  } catch (error: any) {
+	    message.error(error?.message || '禁用失败')
+	  }
+	}
+
+const confirmDelete = async () => {
+  if (!deletingId.value) return
+
+  deleteLoading.value = true
+  try {
+    await deleteActivationCode(deletingId.value)
+    message.success('删除成功')
+    deleteModalVisible.value = false
+    deletingId.value = null
+    fetchData()
+    fetchStatistics()
+  } catch (error: any) {
+    message.error(error?.message || '删除失败')
+  } finally {
+    deleteLoading.value = false
+  }
+}
+
+const handleCancelDelete = () => {
+  deleteModalVisible.value = false
+  deletingId.value = null
+}
+
 const handleExport = async (record: any) => {
   try {
     const blob = await exportActivationCodes({
-      batchNo: record.batchNo,
-      status: 'pending',
+      batchNo: record.batch_id,
+      status: 0,
     })
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `激活码_${record.batchNo}.xlsx`
+    link.download = `激活码_${record.batch_id}.xlsx`
     link.click()
     window.URL.revokeObjectURL(url)
     message.success('导出成功')
@@ -261,6 +517,7 @@ const handleExport = async (record: any) => {
 
 const handleRefresh = () => {
   fetchData()
+  fetchStatistics()
 }
 
 const maskCode = (code: string) => {
@@ -269,14 +526,38 @@ const maskCode = (code: string) => {
   return code.substring(0, 4) + '****' + code.substring(code.length - 4)
 }
 
-const maskNickname = (nickname: string) => {
-  if (!nickname) return ''
-  if (nickname.length <= 2) return nickname
-  return nickname[0] + '***' + nickname[nickname.length - 1]
-}
+	const maskNickname = (nickname: string) => {
+	  if (!nickname) return ''
+	  if (nickname.length <= 2) return nickname
+	  return nickname[0] + '***' + nickname[nickname.length - 1]
+	}
+
+	const getBatchPrefix = (batchId?: string) => {
+	  if (!batchId) return '-'
+	  if (batchId.startsWith('DST')) return 'DST'
+	  if (batchId.startsWith('APP')) return 'APP'
+	  if (batchId.startsWith('ADM')) return 'ADM'
+	  if (batchId.startsWith('AGT')) return 'AGT'
+	  if (batchId.startsWith('D')) return 'D'
+	  return 'BATCH'
+	}
+
+	const getSourceText = (record: any) => {
+	  const sourceMap: Record<string, string> = {
+	    admin: '管理端生成',
+	    agent: '代理商生成',
+	    distributor: '分销购买',
+	    app_admin: '小程序管理员生成',
+	  }
+	  if (record?.source_type && sourceMap[record.source_type]) {
+	    return sourceMap[record.source_type]
+	  }
+	  return getBatchPrefix(record?.batch_id) === 'D' || getBatchPrefix(record?.batch_id) === 'DST' ? '分销购买' : '管理端生成'
+	}
 
 onMounted(() => {
   fetchData()
+  fetchStatistics()
 })
 </script>
 
@@ -285,6 +566,40 @@ onMounted(() => {
   .search-form {
     margin-bottom: 16px;
   }
+
+  :deep(.activation-code-table .ant-table-cell) {
+    vertical-align: middle;
+  }
+
+  .course-name-cell {
+    min-width: 260px;
+    max-width: 360px;
+    line-height: 1.6;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+
+  .time-cell {
+    display: inline-block;
+    max-width: 90px;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: normal;
+    word-break: break-all;
+  }
+
+  .activation-code-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+
+    :deep(.ant-btn) {
+      height: auto;
+      padding: 0;
+      line-height: 1.4;
+    }
+  }
 }
 </style>
-

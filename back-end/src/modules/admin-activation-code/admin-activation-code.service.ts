@@ -1,9 +1,14 @@
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, DataSource, In, Repository } from 'typeorm';
 import * as ExcelJS from 'exceljs';
-import { ActivationCode, ActivationCodeStatus } from '../../database/entities/activation-code.entity';
+import { ActivationCode, ActivationCodeSourceType, ActivationCodeStatus } from '../../database/entities/activation-code.entity';
+import { Course } from '../../database/entities/course.entity';
 import { SysUser, AdminRole } from '../../database/entities/sys-user.entity';
+import { AppUser } from '../../database/entities/app-user.entity';
+import { Distributor } from '../../database/entities/distributor.entity';
+import { UserCourseAuth, AuthSource } from '../../database/entities/user-course-auth.entity';
+import { Order, OrderStatus } from '../../database/entities/order.entity';
 import { GenerateCodeDto } from './dto/generate-code.dto';
 
 @Injectable()
@@ -13,6 +18,17 @@ export class AdminActivationCodeService {
     private activationCodeRepository: Repository<ActivationCode>,
     @InjectRepository(SysUser)
     private sysUserRepository: Repository<SysUser>,
+    @InjectRepository(AppUser)
+    private appUserRepository: Repository<AppUser>,
+    @InjectRepository(Distributor)
+    private distributorRepository: Repository<Distributor>,
+    @InjectRepository(Course)
+    private courseRepository: Repository<Course>,
+    @InjectRepository(UserCourseAuth)
+    private userCourseAuthRepository: Repository<UserCourseAuth>,
+    @InjectRepository(Order)
+    private orderRepository: Repository<Order>,
+    private dataSource: DataSource,
   ) {}
 
   /**
@@ -21,20 +37,31 @@ export class AdminActivationCodeService {
   async generateCodes(agentId: number, dto: GenerateCodeDto) {
     const agent = await this.sysUserRepository.findOne({ where: { id: agentId } });
 
-    if (!agent || agent.role !== AdminRole.AGENT) {
-      throw new ForbiddenException('只有代理商可以生成激活码');
+    if (!agent) {
+      throw new ForbiddenException('用户不存在');
     }
 
-    // 校验余额（如果设置了单价）
-    const codePrice = dto.price || 0;
-    const totalCost = codePrice * dto.count;
+    // SUPER_ADMIN 可以免费生成，AGENT 需要检查余额
+    if (agent.role === AdminRole.AGENT) {
+      const course = await this.courseRepository.findOne({ where: { id: dto.course_id } });
+      if (!course) {
+        throw new BadRequestException('课程不存在');
+      }
 
-    if (totalCost > agent.balance) {
-      throw new BadRequestException('余额不足');
+      const unitPrice = dto.price ?? course.agent_price ?? course.price ?? 0;
+
+      // 校验余额（如果设置了单价）
+      const totalCost = unitPrice * dto.count;
+
+      if (totalCost > agent.balance) {
+        throw new BadRequestException('余额不足');
+      }
     }
 
-    // 生成批次ID
-    const batchId = `BATCH${Date.now()}`;
+    // 生成批次ID：通过前缀区分生成来源
+    const batchPrefix = agent.role === AdminRole.AGENT ? 'AGT' : 'ADM';
+    const sourceType = agent.role === AdminRole.AGENT ? ActivationCodeSourceType.AGENT : ActivationCodeSourceType.ADMIN;
+    const batchId = `${batchPrefix}${agentId}${Date.now()}`;
 
     // 生成激活码
     const codes = [];
@@ -43,8 +70,11 @@ export class AdminActivationCodeService {
       codes.push({
         code,
         batch_id: batchId,
+        batch_prefix: batchPrefix,
         agent_id: agentId,
-        subject_id: dto.subject_id,
+        source_type: sourceType,
+        source_id: agentId,
+        course_id: dto.course_id,
         status: ActivationCodeStatus.PENDING,
       });
     }
@@ -52,10 +82,15 @@ export class AdminActivationCodeService {
     // 批量插入
     await this.activationCodeRepository.save(codes);
 
-    // 扣除余额
-    if (totalCost > 0) {
-      agent.balance -= totalCost;
-      await this.sysUserRepository.save(agent);
+    // 扣除余额（仅代理商）
+    if (agent.role === AdminRole.AGENT) {
+      const course = await this.courseRepository.findOne({ where: { id: dto.course_id } });
+      const unitPrice = dto.price ?? course?.agent_price ?? course?.price ?? 0;
+      const totalCost = unitPrice * dto.count;
+      if (totalCost > 0) {
+        agent.balance -= totalCost;
+        await this.sysUserRepository.save(agent);
+      }
     }
 
     // 生成 Excel
@@ -71,7 +106,7 @@ export class AdminActivationCodeService {
     codes.forEach((item) => {
       worksheet.addRow({
         code: item.code,
-        subject_id: item.subject_id,
+        subject_id: item.course_id,
         batch_id: item.batch_id,
       });
     });
@@ -88,7 +123,15 @@ export class AdminActivationCodeService {
   /**
    * 获取激活码列表
    */
-  async getCodeList(agentId: number, role: AdminRole, page = 1, pageSize = 20) {
+  async getCodeList(
+    agentId: number,
+    role: AdminRole,
+    page = 1,
+    pageSize = 20,
+    batchNo?: string,
+    status?: ActivationCodeStatus,
+    generatorUser?: string,
+  ) {
     const queryBuilder = this.activationCodeRepository.createQueryBuilder('code');
 
     // 数据权限隔离
@@ -96,14 +139,37 @@ export class AdminActivationCodeService {
       queryBuilder.where('code.agent_id = :agentId', { agentId });
     }
 
+    // 批次号筛选
+    if (batchNo) {
+      queryBuilder.andWhere('code.batch_id = :batchNo', { batchNo });
+    }
+
+    // 状态筛选
+    if (status !== undefined) {
+      queryBuilder.andWhere('code.status = :status', { status });
+    }
+
+    if (generatorUser?.trim()) {
+      this.applyGeneratorUserFilter(queryBuilder, generatorUser.trim());
+    }
+
     const [codes, total] = await queryBuilder
+      .leftJoinAndSelect('code.course', 'course')
       .orderBy('code.create_time', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize)
       .getManyAndCount();
 
+    const generatorUserMap = await this.buildGeneratorUserMap(codes);
+
     return {
-      list: codes,
+      list: codes.map((code) => ({
+        ...code,
+        courseName: code.course?.name || '-',
+        source_text: this.getSourceText(code),
+        batch_prefix: code.batch_prefix || this.getBatchPrefix(code.batch_id),
+        generator_user: generatorUserMap.get(code.id) || '-',
+      })),
       total,
       page,
       pageSize,
@@ -111,19 +177,168 @@ export class AdminActivationCodeService {
   }
 
   /**
-   * 导出激活码（仅导出待用状态）
+   * 获取激活码详情
    */
-  async exportCodes(agentId: number, role: AdminRole) {
+  async getCodeDetail(id: number, agentId: number, role: AdminRole) {
     const queryBuilder = this.activationCodeRepository.createQueryBuilder('code');
 
-    queryBuilder.where('code.status = :status', { status: ActivationCodeStatus.PENDING });
+    queryBuilder.where('code.id = :id', { id });
 
     // 数据权限隔离
     if (role === AdminRole.AGENT) {
       queryBuilder.andWhere('code.agent_id = :agentId', { agentId });
     }
 
-    const codes = await queryBuilder.getMany();
+    const code = await queryBuilder
+      .leftJoinAndSelect('code.course', 'course')
+      .getOne();
+
+    if (!code) {
+      throw new BadRequestException('激活码不存在');
+    }
+
+    const generatorUserMap = await this.buildGeneratorUserMap([code]);
+
+    return {
+      ...code,
+      source_text: this.getSourceText(code),
+      batch_prefix: code.batch_prefix || this.getBatchPrefix(code.batch_id),
+      generator_user: generatorUserMap.get(code.id) || '-',
+    };
+  }
+
+  /**
+   * 作废已使用激活码，并撤销该激活码授予的课程权限
+   */
+  async invalidateUsedCode(id: number, agentId: number, role: AdminRole) {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const queryBuilder = queryRunner.manager
+        .createQueryBuilder(ActivationCode, 'code')
+        .setLock('pessimistic_write')
+        .where('code.id = :id', { id });
+
+      if (role === AdminRole.AGENT) {
+        queryBuilder.andWhere('code.agent_id = :agentId', { agentId });
+      }
+
+      const code = await queryBuilder.getOne();
+      if (!code) {
+        throw new BadRequestException('激活码不存在');
+      }
+
+      if (code.status !== ActivationCodeStatus.USED || !code.used_by_uid) {
+        throw new BadRequestException('只能禁用已激活的激活码');
+      }
+
+      code.status = ActivationCodeStatus.INVALID;
+      await queryRunner.manager.save(ActivationCode, code);
+
+      await this.revokeCodeCourseAuth(queryRunner.manager, code);
+
+      await queryRunner.commitTransaction();
+      return { success: true };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * 删除激活码
+   */
+  async deleteCode(id: number, agentId: number, role: AdminRole) {
+    const queryBuilder = this.activationCodeRepository.createQueryBuilder('code');
+
+    queryBuilder.where('code.id = :id', { id });
+
+    // 数据权限隔离
+    if (role === AdminRole.AGENT) {
+      queryBuilder.andWhere('code.agent_id = :agentId', { agentId });
+    }
+
+    const code = await queryBuilder.getOne();
+
+    if (!code) {
+      throw new BadRequestException('激活码不存在');
+    }
+
+    // 只能删除待用状态的激活码
+    if (code.status !== ActivationCodeStatus.PENDING) {
+      throw new BadRequestException('只能删除待用状态的激活码');
+    }
+
+    await this.activationCodeRepository.remove(code);
+
+    return { success: true };
+  }
+
+  /**
+   * 获取激活码统计
+   */
+  async getCodeStatistics(agentId: number, role: AdminRole) {
+    const queryBuilder = this.activationCodeRepository.createQueryBuilder('code');
+
+    // 数据权限隔离
+    if (role === AdminRole.AGENT) {
+      queryBuilder.where('code.agent_id = :agentId', { agentId });
+    }
+
+    const [total, pending, used, invalid] = await Promise.all([
+      queryBuilder.getCount(),
+      queryBuilder
+        .clone()
+        .andWhere('code.status = :status', { status: ActivationCodeStatus.PENDING })
+        .getCount(),
+      queryBuilder
+        .clone()
+        .andWhere('code.status = :status', { status: ActivationCodeStatus.USED })
+        .getCount(),
+      queryBuilder
+        .clone()
+        .andWhere('code.status = :status', { status: ActivationCodeStatus.INVALID })
+        .getCount(),
+    ]);
+
+    return {
+      total,
+      pending,
+      used,
+      invalid,
+    };
+  }
+
+  /**
+   * 导出激活码（支持按批次导出）
+   */
+  async exportCodes(agentId: number, role: AdminRole, batchNo?: string, status?: ActivationCodeStatus) {
+    const queryBuilder = this.activationCodeRepository.createQueryBuilder('code');
+
+    // 默认只导出待用状态
+    if (status !== undefined) {
+      queryBuilder.where('code.status = :status', { status });
+    } else {
+      queryBuilder.where('code.status = :status', { status: ActivationCodeStatus.PENDING });
+    }
+
+    // 批次号筛选
+    if (batchNo) {
+      queryBuilder.andWhere('code.batch_id = :batchNo', { batchNo });
+    }
+
+    // 数据权限隔离
+    if (role === AdminRole.AGENT) {
+      queryBuilder.andWhere('code.agent_id = :agentId', { agentId });
+    }
+
+    const codes = await queryBuilder
+      .leftJoinAndSelect('code.course', 'course')
+      .getMany();
 
     // 生成 Excel
     const workbook = new ExcelJS.Workbook();
@@ -131,15 +346,17 @@ export class AdminActivationCodeService {
 
     worksheet.columns = [
       { header: '激活码', key: 'code', width: 30 },
-      { header: '科目ID', key: 'subject_id', width: 10 },
+      { header: '课程名称', key: 'courseName', width: 30 },
       { header: '批次ID', key: 'batch_id', width: 20 },
+      { header: '状态', key: 'status', width: 10 },
     ];
 
     codes.forEach((code) => {
       worksheet.addRow({
         code: code.code,
-        subject_id: code.subject_id,
+        courseName: code.course?.name || '-',
         batch_id: code.batch_id,
+        status: this.getStatusText(code.status),
       });
     });
 
@@ -159,5 +376,188 @@ export class AdminActivationCodeService {
     }
     return code;
   }
-}
 
+  private async revokeCodeCourseAuth(manager: any, code: ActivationCode) {
+    if (!code.used_by_uid) {
+      return;
+    }
+
+    const paidOrder = await manager.findOne(Order, {
+      where: {
+        user_id: code.used_by_uid,
+        course_id: code.course_id,
+        status: OrderStatus.PAID,
+      },
+    });
+    if (paidOrder) {
+      return;
+    }
+
+    const otherUsedCodeCount = await manager.count(ActivationCode, {
+      where: {
+        used_by_uid: code.used_by_uid,
+        course_id: code.course_id,
+        status: ActivationCodeStatus.USED,
+      },
+    });
+    if (otherUsedCodeCount > 0) {
+      return;
+    }
+
+    await manager.delete(UserCourseAuth, {
+      user_id: code.used_by_uid,
+      course_id: code.course_id,
+      source: AuthSource.CODE,
+    });
+  }
+
+  private getBatchPrefix(batchId?: string) {
+    if (!batchId) return '-';
+    if (batchId.startsWith('DST')) return 'DST';
+    if (batchId.startsWith('APP')) return 'APP';
+    if (batchId.startsWith('ADM')) return 'ADM';
+    if (batchId.startsWith('AGT')) return 'AGT';
+    if (batchId.startsWith('D')) return 'D';
+    return 'BATCH';
+  }
+
+  private getSourceText(code: ActivationCode) {
+    const sourceType = code.source_type || (code.batch_id?.startsWith('D') ? ActivationCodeSourceType.DISTRIBUTOR : ActivationCodeSourceType.ADMIN);
+    const textMap: Record<string, string> = {
+      [ActivationCodeSourceType.ADMIN]: '管理端生成',
+      [ActivationCodeSourceType.AGENT]: '代理商生成',
+      [ActivationCodeSourceType.DISTRIBUTOR]: '分销购买',
+      [ActivationCodeSourceType.APP_ADMIN]: '小程序管理员生成',
+    };
+    return textMap[sourceType] || '未知来源';
+  }
+
+  private applyGeneratorUserFilter(
+    queryBuilder: ReturnType<Repository<ActivationCode>['createQueryBuilder']>,
+    generatorUser: string,
+  ) {
+    const keyword = `%${generatorUser}%`;
+    queryBuilder.andWhere(
+      new Brackets((qb) => {
+        qb.where(
+          `(
+            (code.source_type IN (:...sysTypes) OR (code.source_type IS NULL AND (code.batch_id NOT LIKE 'D%' OR code.batch_id IS NULL)))
+            AND EXISTS (
+              SELECT 1 FROM sys_user su
+              WHERE su.id = COALESCE(code.source_id, code.agent_id)
+              AND su.username LIKE :keyword
+            )
+          )`,
+          {
+            sysTypes: [ActivationCodeSourceType.ADMIN, ActivationCodeSourceType.AGENT],
+            keyword,
+          },
+        )
+          .orWhere(
+            `(
+              code.source_type = :appAdminType
+              AND EXISTS (
+                SELECT 1 FROM app_user au
+                WHERE au.id = COALESCE(code.source_id, code.agent_id)
+                AND au.nickname LIKE :keyword
+              )
+            )`,
+            { appAdminType: ActivationCodeSourceType.APP_ADMIN, keyword },
+          )
+          .orWhere(
+            `(
+              (code.source_type = :distributorType OR (code.source_type IS NULL AND code.batch_id LIKE 'D%'))
+              AND EXISTS (
+                SELECT 1 FROM distributor d
+                LEFT JOIN app_user au ON au.id = d.user_id
+                WHERE d.id = COALESCE(code.source_id, code.agent_id)
+                AND (au.nickname LIKE :keyword OR d.distributor_code LIKE :keyword)
+              )
+            )`,
+            { distributorType: ActivationCodeSourceType.DISTRIBUTOR, keyword },
+          );
+      }),
+    );
+  }
+
+  private async buildGeneratorUserMap(codes: ActivationCode[]) {
+    const result = new Map<number, string>();
+    if (!codes.length) {
+      return result;
+    }
+
+    const sysUserIds = new Set<number>();
+    const appUserIds = new Set<number>();
+    const distributorIds = new Set<number>();
+
+    for (const code of codes) {
+      const sourceType =
+        code.source_type ||
+        (code.batch_id?.startsWith('D') ? ActivationCodeSourceType.DISTRIBUTOR : ActivationCodeSourceType.ADMIN);
+      const sourceId = code.source_id || code.agent_id;
+      if (!sourceId) continue;
+
+      if (sourceType === ActivationCodeSourceType.ADMIN || sourceType === ActivationCodeSourceType.AGENT) {
+        sysUserIds.add(sourceId);
+      } else if (sourceType === ActivationCodeSourceType.APP_ADMIN) {
+        appUserIds.add(sourceId);
+      } else if (sourceType === ActivationCodeSourceType.DISTRIBUTOR) {
+        distributorIds.add(sourceId);
+      }
+    }
+
+    const [sysUsers, appUsers, distributors] = await Promise.all([
+      sysUserIds.size
+        ? this.sysUserRepository.find({ where: { id: In([...sysUserIds]) }, select: ['id', 'username'] })
+        : Promise.resolve([]),
+      appUserIds.size
+        ? this.appUserRepository.find({ where: { id: In([...appUserIds]) }, select: ['id', 'nickname'] })
+        : Promise.resolve([]),
+      distributorIds.size
+        ? this.distributorRepository.find({
+            where: { id: In([...distributorIds]) },
+            relations: ['user'],
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const sysUserMap = new Map(sysUsers.map((item) => [item.id, item.username]));
+    const appUserMap = new Map(appUsers.map((item) => [item.id, item.nickname || `用户${item.id}`]));
+
+    for (const code of codes) {
+      const sourceType =
+        code.source_type ||
+        (code.batch_id?.startsWith('D') ? ActivationCodeSourceType.DISTRIBUTOR : ActivationCodeSourceType.ADMIN);
+      const sourceId = code.source_id || code.agent_id;
+      if (!sourceId) {
+        result.set(code.id, '-');
+        continue;
+      }
+
+      if (sourceType === ActivationCodeSourceType.ADMIN || sourceType === ActivationCodeSourceType.AGENT) {
+        result.set(code.id, sysUserMap.get(sourceId) || `管理员${sourceId}`);
+        continue;
+      }
+
+      if (sourceType === ActivationCodeSourceType.APP_ADMIN) {
+        result.set(code.id, appUserMap.get(sourceId) || `小程序用户${sourceId}`);
+        continue;
+      }
+
+      if (sourceType === ActivationCodeSourceType.DISTRIBUTOR) {
+        const distributor = distributors.find((item) => item.id === sourceId);
+        const nickname = distributor?.user?.nickname;
+        result.set(code.id, nickname || distributor?.distributor_code || `分销商${sourceId}`);
+        continue;
+      }
+
+      result.set(code.id, '-');
+    }
+
+    return result;
+  }
+
+  private getStatusText(status: ActivationCodeStatus) {
+    return status === ActivationCodeStatus.PENDING ? '待用' : status === ActivationCodeStatus.USED ? '已用' : '作废';
+  }
+}
