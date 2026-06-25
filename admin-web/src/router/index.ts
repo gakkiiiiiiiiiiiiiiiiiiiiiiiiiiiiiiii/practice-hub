@@ -1,290 +1,383 @@
-import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
-import { useUserStore } from '@/store/user'
-import { getToken } from '@/utils/auth'
-import NProgress from 'nprogress'
-import 'nprogress/nprogress.css'
+import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
+import { useUserStore } from '@/store/user';
+import { getToken, getUserInfo as getStoredUserInfo } from '@/utils/auth';
+import { getDefaultAdminPath } from '@/utils/admin-navigation';
+import NProgress from 'nprogress';
+import 'nprogress/nprogress.css';
 
-NProgress.configure({ showSpinner: false })
+NProgress.configure({ showSpinner: false });
 
 const routes: RouteRecordRaw[] = [
-  {
-    path: '/login',
-    name: 'Login',
-    component: () => import('@/views/login/index.vue'),
-    meta: {
-      title: '登录',
-      requiresAuth: false,
-    },
-  },
-  {
-    path: '/',
-    component: () => import('@/layouts/BasicLayout.vue'),
-    redirect: '/dashboard',
-    meta: {
-      requiresAuth: true,
-    },
-    children: [
-      {
-        path: '/dashboard',
-        name: 'Dashboard',
-        component: () => import('@/views/dashboard/index.vue'),
-        meta: {
-          title: '仪表盘',
-          roles: ['super_admin', 'content_admin', 'agent'],
-        },
-      },
-      {
-        path: '/dashboard/analysis',
-        name: 'DashboardAnalysis',
-        component: () => import('@/views/dashboard/analysis/index.vue'),
-        meta: {
-          title: '全局数据看板',
-          roles: ['super_admin'],
-        },
-      },
-      {
-        path: '/dashboard/agent-workbench',
-        name: 'AgentWorkbench',
-        component: () => import('@/views/dashboard/agent-workbench/index.vue'),
-        meta: {
-          title: '代理商工作台',
-          roles: ['agent'],
-        },
-      },
-    ],
-  },
-  {
-    path: '/question',
-    component: () => import('@/layouts/BasicLayout.vue'),
-    meta: {
-      requiresAuth: true,
-      roles: ['super_admin', 'content_admin'],
-    },
-    children: [
-      {
-        path: 'subject',
-        name: 'QuestionSubject',
-        component: () => import('@/views/question/subject/index.vue'),
-        meta: {
-          title: '科目管理',
-        },
-      },
-      {
-        path: 'chapter',
-        name: 'QuestionChapter',
-        component: () => import('@/views/question/chapter/index.vue'),
-        meta: {
-          title: '章节管理',
-        },
-      },
-      {
-        path: 'list',
-        name: 'QuestionList',
-        component: () => import('@/views/question/list/index.vue'),
-        meta: {
-          title: '试题管理',
-        },
-      },
-      {
-        path: 'edit/:id?',
-        name: 'QuestionEdit',
-        component: () => import('@/views/question/edit/index.vue'),
-        meta: {
-          title: '编辑题目',
-        },
-      },
-    ],
-  },
-  {
-    path: '/agent',
-    component: () => import('@/layouts/BasicLayout.vue'),
-    meta: {
-      requiresAuth: true,
-      roles: ['super_admin', 'agent'],
-    },
-    children: [
-      {
-        path: 'activation-code',
-        name: 'ActivationCode',
-        component: () => import('@/views/agent/activation-code/index.vue'),
-        meta: {
-          title: '激活码管理',
-        },
-      },
-      {
-        path: 'balance',
-        name: 'Balance',
-        component: () => import('@/views/agent/balance/index.vue'),
-        meta: {
-          title: '资金记录',
-        },
-      },
-    ],
-  },
-  {
-    path: '/user',
-    component: () => import('@/layouts/BasicLayout.vue'),
-    meta: {
-      requiresAuth: true,
-      roles: ['super_admin'],
-    },
-    children: [
-      {
-        path: 'list',
-        name: 'UserList',
-        component: () => import('@/views/user/list/index.vue'),
-        meta: {
-          title: '小程序用户',
-        },
-      },
-    ],
-  },
-  {
-    path: '/system',
-    component: () => import('@/layouts/BasicLayout.vue'),
-    meta: {
-      requiresAuth: true,
-      roles: ['super_admin'],
-    },
-    children: [
-      {
-        path: 'account',
-        name: 'SystemAccount',
-        component: () => import('@/views/system/account/index.vue'),
-        meta: {
-          title: '账号管理',
-        },
-      },
-      {
-        path: 'role',
-        name: 'SystemRole',
-        component: () => import('@/views/system/role/index.vue'),
-        meta: {
-          title: '角色管理',
-        },
-      },
-      {
-        path: 'config',
-        name: 'SystemConfig',
-        component: () => import('@/views/system/config/index.vue'),
-        meta: {
-          title: '运营配置',
-        },
-      },
-      {
-        path: 'recommend',
-        name: 'SystemRecommend',
-        component: () => import('@/views/recommend/index.vue'),
-        meta: {
-          title: '首页推荐管理',
-        },
-      },
-    ],
-  },
-  {
-    path: '/403',
-    name: 'Forbidden',
-    component: () => import('@/views/error/403.vue'),
-    meta: {
-      title: '无权限',
-      requiresAuth: false,
-    },
-  },
-  {
-    path: '/:pathMatch(.*)*',
-    name: 'NotFound',
-    component: () => import('@/views/error/404.vue'),
-    meta: {
-      title: '页面不存在',
-      requiresAuth: false,
-    },
-  },
-]
+	{
+		path: '/login',
+		name: 'Login',
+		component: () => import('@/views/login/index.vue'),
+		meta: {
+			title: '登录',
+			requiresAuth: false,
+		},
+	},
+	{
+		path: '/',
+		component: () => import('@/layouts/BasicLayout.vue'),
+		redirect: () => {
+			if (!getToken()) return '/login';
+			const storedUser = getStoredUserInfo();
+			return getDefaultAdminPath(storedUser?.roles?.[0], storedUser?.permissions || []);
+		},
+		meta: {
+			requiresAuth: true,
+		},
+		children: [
+			{
+				path: '/dashboard',
+				name: 'Dashboard',
+				component: () => import('@/views/dashboard/index.vue'),
+				meta: {
+					title: '仪表盘',
+					roles: ['super_admin'],
+				},
+			},
+			{
+				path: '/dashboard/analysis',
+				name: 'DashboardAnalysis',
+				component: () => import('@/views/dashboard/analysis/index.vue'),
+				meta: {
+					title: '全局数据看板',
+					roles: ['super_admin'],
+				},
+			},
+			{
+				path: '/dashboard/agent-workbench',
+				name: 'AgentWorkbench',
+				component: () => import('@/views/dashboard/agent-workbench/index.vue'),
+				meta: {
+					title: '代理商工作台',
+					roles: ['agent'],
+				},
+			},
+		],
+	},
+	{
+		path: '/question',
+		component: () => import('@/layouts/BasicLayout.vue'),
+		meta: {
+			requiresAuth: true,
+			roles: ['super_admin', 'content_admin'],
+			permissions: ['course:view', 'question:view', 'chapter:view'],
+		},
+		children: [
+			{
+				path: 'category',
+				name: 'QuestionCategory',
+				component: () => import('@/views/question/category/index.vue'),
+				meta: {
+					title: '分类管理',
+					permissions: ['question:view'],
+				},
+			},
+			{
+				path: 'course',
+				name: 'QuestionCourse',
+				component: () => import('@/views/question/course/index.vue'),
+				meta: {
+					title: '课程管理',
+					permissions: ['course:view'],
+				},
+			},
+			{
+				path: 'course-type',
+				name: 'QuestionCourseType',
+				component: () => import('@/views/question/course-type/index.vue'),
+				meta: {
+					title: '课程类型',
+					permissions: ['course:view'],
+				},
+			},
+			{
+				path: 'chapter',
+				name: 'QuestionChapter',
+				component: () => import('@/views/question/chapter/index.vue'),
+				meta: {
+					title: '章节管理',
+					permissions: ['chapter:view'],
+				},
+			},
+			{
+				path: 'list',
+				name: 'QuestionList',
+				component: () => import('@/views/question/list/index.vue'),
+				meta: {
+					title: '试题管理',
+					permissions: ['question:view'],
+				},
+			},
+			{
+				path: 'edit/:id?',
+				name: 'QuestionEdit',
+				component: () => import('@/views/question/edit/index.vue'),
+				meta: {
+					title: '编辑题目',
+					permissions: ['question:create', 'question:edit'],
+				},
+			},
+		],
+	},
+	{
+		path: '/agent',
+		component: () => import('@/layouts/BasicLayout.vue'),
+		meta: {
+			requiresAuth: true,
+			roles: ['super_admin', 'agent'],
+		},
+		children: [
+			{
+				path: 'activation-code',
+				name: 'ActivationCode',
+				component: () => import('@/views/agent/activation-code/index.vue'),
+				meta: {
+					title: '激活码管理',
+				},
+			},
+			{
+				path: 'balance',
+				name: 'Balance',
+				component: () => import('@/views/agent/balance/index.vue'),
+				meta: {
+					title: '资金记录',
+				},
+			},
+		],
+	},
+	{
+		path: '/user',
+		component: () => import('@/layouts/BasicLayout.vue'),
+		meta: {
+			requiresAuth: true,
+			roles: ['super_admin'],
+		},
+		children: [
+			{
+				path: 'list',
+				name: 'UserList',
+				component: () => import('@/views/user/list/index.vue'),
+				meta: {
+					title: '用户列表',
+				},
+			},
+			{
+				path: 'coupons',
+				name: 'UserCoupons',
+				component: () => import('@/views/user/coupons/index.vue'),
+				meta: {
+					title: '优惠券管理',
+				},
+			},
+			{
+				path: 'orders',
+				name: 'UserOrders',
+				component: () => import('@/views/user/orders/index.vue'),
+				meta: {
+					title: '订单列表',
+				},
+			},
+		],
+	},
+	{
+		path: '/system',
+		component: () => import('@/layouts/BasicLayout.vue'),
+		meta: {
+			requiresAuth: true,
+			roles: ['super_admin'],
+		},
+		children: [
+			{
+				path: 'account',
+				name: 'SystemAccount',
+				component: () => import('@/views/system/account/index.vue'),
+				meta: {
+					title: '账号管理',
+				},
+			},
+			{
+				path: 'role',
+				name: 'SystemRole',
+				component: () => import('@/views/system/role/index.vue'),
+				meta: {
+					title: '角色管理',
+				},
+			},
+			{
+				path: 'config',
+				name: 'SystemConfig',
+				component: () => import('@/views/system/config/index.vue'),
+				meta: {
+					title: '运营配置',
+				},
+			},
+			{
+				path: 'feedback',
+				name: 'SystemFeedback',
+				component: () => import('@/views/feedback/index.vue'),
+				meta: {
+					title: '功能反馈',
+				},
+			},
+			{
+				path: 'after-sale',
+				name: 'SystemAfterSale',
+				component: () => import('@/views/after-sale/index.vue'),
+				meta: {
+					title: '售后申请管理',
+				},
+			},
+			{
+				path: 'recommend',
+				name: 'SystemRecommend',
+				component: () => import('@/views/recommend/index.vue'),
+				meta: {
+					title: '首页推荐管理',
+				},
+			},
+			{
+				path: 'package',
+				name: 'SystemPackage',
+				component: () => import('@/views/package/index.vue'),
+				meta: {
+					title: '套餐管理',
+				},
+			},
+			{
+				path: 'distributor',
+				name: 'SystemDistributor',
+				component: () => import('@/views/distributor/index.vue'),
+				meta: {
+					title: '分销管理',
+				},
+			},
+			{
+				path: 'log',
+				name: 'SystemLog',
+				component: () => import('@/views/system/log/index.vue'),
+				meta: {
+					title: '系统操作日志',
+				},
+			},
+		],
+	},
+	{
+		path: '/403',
+		name: 'Forbidden',
+		component: () => import('@/views/error/403.vue'),
+		meta: {
+			title: '无权限',
+			requiresAuth: false,
+		},
+	},
+	{
+		path: '/:pathMatch(.*)*',
+		name: 'NotFound',
+		component: () => import('@/views/error/404.vue'),
+		meta: {
+			title: '页面不存在',
+			requiresAuth: false,
+		},
+	},
+];
 
 const router = createRouter({
-  history: createWebHistory(),
-  routes,
-})
+	history: createWebHistory(),
+	routes,
+});
 
 router.beforeEach(async (to, from, next) => {
-  NProgress.start()
+	NProgress.start();
 
-  const token = getToken()
-  const userStore = useUserStore()
+	const token = getToken();
+	const userStore = useUserStore();
 
-  // 错误页面和登录页不需要权限检查
-  if (to.path === '/403' || to.path === '/login' || to.path.startsWith('/404')) {
-    next()
-    return
-  }
+	if (to.path === '/login') {
+		if (!token) {
+			next();
+			return;
+		}
+		if (!userStore.userInfo) {
+			await userStore.getUserInfo();
+		}
+		next({ path: getDefaultAdminPath(userStore.roles?.[0], userStore.userInfo?.permissions || []) });
+		return;
+	}
 
-  if (to.meta.requiresAuth !== false) {
-    if (!token) {
-      next({
-        path: '/login',
-        query: { redirect: to.fullPath },
-      })
-      return
-    }
+	// 错误页面和登录页不需要权限检查
+	// 注意：404 路由使用 pathMatch，所以需要检查 name 或 path
+	if (to.path === '/403' || to.name === 'NotFound' || to.path.startsWith('/404')) {
+		// 如果是在404页面且token已过期，仍然允许跳转到登录页
+		next();
+		return;
+	}
 
-    // 如果用户信息未加载，先加载用户信息
-    if (!userStore.userInfo) {
-      try {
-        await userStore.getUserInfo()
-      } catch (error) {
-        console.error('获取用户信息失败:', error)
-        next({ path: '/login' })
-        return
-      }
-    }
+	if (to.meta.requiresAuth !== false) {
+		if (!token) {
+			next({
+				path: '/login',
+				query: { redirect: to.fullPath },
+			});
+			return;
+		}
 
-    // 检查角色权限
-    if (to.meta.roles && to.meta.roles.length > 0) {
-      const userRoles = userStore.roles || []
-      const hasPermission = to.meta.roles.some((role) => userRoles.includes(role))
+		// 如果用户信息未加载，先加载用户信息
+		if (!userStore.userInfo) {
+			try {
+				await userStore.getUserInfo();
+			} catch (error: any) {
+				console.error('获取用户信息失败:', error);
+				// 如果是401错误，清除认证信息
+				if (error?.response?.status === 401 || error?.code === 401) {
+					const { clearAuth } = await import('@/utils/auth');
+					clearAuth();
+					userStore.logout();
+				}
+				// 跳转到登录页
+				next({
+					path: '/login',
+					query: { redirect: to.fullPath },
+				});
+				return;
+			}
+		}
 
-      if (!hasPermission) {
-        // 避免循环重定向：如果是从403页面跳转过来的，不再重定向
-        if (from.path !== '/403') {
-          next({ path: '/403' })
-          return
-        } else {
-          // 如果已经在403页面，跳转到用户有权限的默认首页
-          const defaultPath = getDefaultPathByRole(userStore.roles[0])
-          next({ path: defaultPath })
-          return
-        }
-      }
-    }
-  }
+		if (to.path === '/') {
+			next({ path: getDefaultAdminPath(userStore.roles?.[0], userStore.userInfo?.permissions || []) });
+			return;
+		}
 
-  // 已登录用户访问登录页，重定向到首页
-  if (to.path === '/login' && token) {
-    const defaultPath = getDefaultPathByRole(userStore.roles?.[0])
-    next({ path: defaultPath || '/' })
-    return
-  }
+		// 检查角色权限
+		if (to.meta.roles && Array.isArray(to.meta.roles) && to.meta.roles.length > 0) {
+			const userRoles: string[] = userStore.roles || [];
+			const hasRolePermission = to.meta.roles.some((role: string) => userRoles.includes(role));
+			const requiredPermissions = Array.isArray(to.meta.permissions) ? (to.meta.permissions as string[]) : [];
+			const hasRoutePermission = requiredPermissions.some((permission) => userStore.hasPermission(permission));
 
-  next()
-})
+			if (!hasRolePermission && !hasRoutePermission) {
+				// 避免循环重定向：如果是从403页面跳转过来的，不再重定向
+				if (from.path !== '/403') {
+					next({ path: '/403' });
+					return;
+				} else {
+					// 如果已经在403页面，跳转到用户有权限的默认首页
+					const defaultPath = getDefaultAdminPath(userStore.roles[0], userStore.userInfo?.permissions || []);
+					next({ path: defaultPath });
+					return;
+				}
+			}
+		}
+	}
 
-// 根据角色获取默认首页路径
-function getDefaultPathByRole(role?: string): string {
-  switch (role) {
-    case 'super_admin':
-      return '/dashboard/analysis'
-    case 'content_admin':
-      return '/question/subject'
-    case 'agent':
-      return '/dashboard/agent-workbench'
-    default:
-      return '/dashboard'
-  }
-}
+	next();
+});
 
 router.afterEach(() => {
-  NProgress.done()
-})
+	NProgress.done();
+});
 
-export default router
-
+export default router;

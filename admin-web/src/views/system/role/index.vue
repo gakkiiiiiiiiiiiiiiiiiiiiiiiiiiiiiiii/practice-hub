@@ -1,16 +1,25 @@
 <template>
   <div class="role-management">
     <a-card>
-      <template #title>角色管理</template>
       <template #extra>
-        <a-button type="primary" @click="handleAdd">
-          <template #icon><plus-outlined /></template>
-          新增角色
-        </a-button>
+        <a-space>
+          <a-alert
+            message="提示"
+            description="系统默认提供三个角色：代理商、题库管理员、系统管理员。系统角色不能修改权限或删除。"
+            type="info"
+            show-icon
+            style="margin-bottom: 16px"
+          />
+          <a-button type="primary" @click="handleAdd">
+            <template #icon><plus-outlined /></template>
+            新增角色
+          </a-button>
+          <TableColumnSetting :items="settingItems" @update:items="updatePreference" @reset="resetColumns" />
+        </a-space>
       </template>
 
       <a-table
-        :columns="columns"
+        :columns="displayColumns"
         :data-source="dataSource"
         :loading="loading"
         :pagination="pagination"
@@ -18,17 +27,39 @@
         row-key="id"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'menus'">
-            <a-tag v-for="menu in record.menus" :key="menu" style="margin: 2px">
-              {{ menu }}
+          <template v-if="column.key === 'name'">
+            <a-space>
+              <span>{{ record.name }}</span>
+              <a-tag v-if="record.isSystem" color="red">系统角色</a-tag>
+              <a-tag v-else color="blue">默认角色</a-tag>
+            </a-space>
+          </template>
+          <template v-else-if="column.key === 'description'">
+            <span>{{ record.description || '-' }}</span>
+          </template>
+          <template v-else-if="column.key === 'permissions'">
+            <a-space wrap>
+              <a-tag v-for="permission in record.permissions" :key="permission" :title="permission" style="margin: 2px">
+                {{ getPermissionDisplayName(permission) }}
+                <template v-if="record.permissionLimits?.[permission]">
+                  / 日 {{ record.permissionLimits[permission] }} 次
+                </template>
+              </a-tag>
+              <span v-if="record.permissions.length === 0" style="color: #999">无权限</span>
+            </a-space>
+          </template>
+          <template v-else-if="column.key === 'permissionCount'">
+            <a-tag :color="record.permissionCount > 0 ? 'green' : 'default'">
+              {{ record.permissionCount }} 项权限
             </a-tag>
           </template>
           <template v-else-if="column.key === 'action'">
             <a-space>
               <a-button type="link" size="small" @click="handleEdit(record)">
-                编辑
+                编辑权限
               </a-button>
               <a-popconfirm
+                v-if="!record.isSystem"
                 title="确定要删除这个角色吗？"
                 @confirm="handleDelete(record)"
               >
@@ -54,6 +85,9 @@ import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { getRoleList, deleteRole } from '@/api/system'
 import RoleModal from './components/RoleModal.vue'
+import { getPermissionDisplayName } from '@/utils/permission-label'
+import TableColumnSetting from '@/components/TableColumnSetting/index.vue'
+import { useTableColumns } from '@/composables/useTableColumns'
 
 const loading = ref(false)
 const dataSource = ref([])
@@ -64,29 +98,49 @@ const pagination = ref({
   current: 1,
   pageSize: 10,
   total: 0,
+  showSizeChanger: true,
+  showQuickJumper: true,
+  showTotal: (total: number) => `共 ${total} 条`,
 })
 
-const columns = [
+const baseColumns = [
   {
     title: '角色标识',
     dataIndex: 'value',
     key: 'value',
+    width: 150,
   },
   {
     title: '角色名称',
-    dataIndex: 'name',
     key: 'name',
+    width: 200,
   },
   {
-    title: '菜单权限',
-    key: 'menus',
+    title: '描述',
+    key: 'description',
+    ellipsis: true,
+  },
+  {
+    title: '权限数量',
+    key: 'permissionCount',
+    width: 120,
+  },
+  {
+    title: '权限列表',
+    key: 'permissions',
+    ellipsis: true,
   },
   {
     title: '操作',
     key: 'action',
     width: 150,
+    fixed: 'right',
   },
 ]
+
+const { displayColumns, settingItems, resetColumns, updatePreference } = useTableColumns('system-role-list', baseColumns, {
+  lockRightKeys: ['action'],
+})
 
 const fetchData = async () => {
   loading.value = true
@@ -97,8 +151,8 @@ const fetchData = async () => {
     })
     dataSource.value = res.data.list
     pagination.value.total = res.data.total
-  } catch (error) {
-    message.error('获取角色列表失败')
+  } catch (error: any) {
+    message.error(error?.message || '获取角色列表失败')
   } finally {
     loading.value = false
   }
@@ -116,17 +170,25 @@ const handleAdd = () => {
 }
 
 const handleEdit = (record: any) => {
+  if (record.isSystem) {
+    message.warning('系统角色不能修改权限')
+    return
+  }
   currentRecord.value = record
   modalVisible.value = true
 }
 
 const handleDelete = async (record: any) => {
+  if (record.isSystem) {
+    message.warning('系统角色不能删除')
+    return
+  }
   try {
     await deleteRole(record.id)
     message.success('删除成功')
     fetchData()
-  } catch (error) {
-    message.error('删除失败')
+  } catch (error: any) {
+    message.error(error?.message || '删除失败')
   }
 }
 
@@ -144,4 +206,3 @@ onMounted(() => {
   // 样式
 }
 </style>
-

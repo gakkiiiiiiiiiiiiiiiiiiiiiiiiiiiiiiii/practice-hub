@@ -1,0 +1,306 @@
+/**
+ * iOS UI Kit 主题变量
+ * 基于 iOS Human Interface Guidelines
+ * 包含：圆角、玻璃态、柔和阴影、系统蓝色和灰色、San Francisco 字体
+ */
+
+// ==================== 颜色系统 ====================
+// iOS 系统蓝色
+$ios-blue: #007AFF;
+$ios-blue-light: #5AC8FA;
+$ios-blue-dark: #0051D5;
+
+// iOS 系统灰色
+$ios-gray-1: #F2F2F7;  // 背景色
+$ios-gray-2: #E5E5EA;  // 分隔线
+$ios-gray-3: #D1D1D6;  // 禁用文本
+$ios-gray-4: #C7C7CC;  // 占位符
+$ios-gray-5: #AEAEB2;  // 次要文本
+$ios-gray-6: #8E8E93;  // 次要文本
+$ios-gray-7: #636366;  // 主要文本
+$ios-gray-8: #48484A;  // 主要文本
+$ios-gray-9: #1C1C1E;  // 最深文本
+
+// 功能颜色
+$ios-red: #FF3B30;
+$ios-orange: #FF9500;
+$ios-yellow: #FFCC00;
+$ios-green: #34C759;
+$ios-teal: #5AC8FA;
+$ios-indigo: #5856D6;
+$ios-purple: #AF52DE;
+$ios-pink: #FF2D55;
+
+// 背景色
+$ios-bg-primary: #FFFFFF;
+$ios-bg-secondary: $ios-gray-1;
+$ios-bg-tertiary: #FFFFFF;
+
+// 文本颜色
+$ios-text-primary: $ios-gray-9;
+$ios-text-secondary: $ios-gray-6;
+$ios-text-tertiary: $ios-gray-5;
+$ios-text-disabled: $ios-gray-3;
+
+// ==================== 圆角系统 ====================
+$ios-radius-xs: 8rpx;    // 小元素
+$ios-radius-sm: 12rpx;   // 按钮、输入框
+$ios-radius-md: 16rpx;   // 卡片
+$ios-radius-lg: 20rpx;   // 大卡片
+$ios-radius-xl: 24rpx;   // 模态框
+$ios-radius-full: 9999rpx; // 圆形
+
+// ==================== 阴影系统 ====================
+// iOS 柔和阴影
+$ios-shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+$ios-shadow-md: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
+$ios-shadow-lg: 0 8rpx 24rpx rgba(0, 0, 0, 0.12);
+$ios-shadow-xl: 0 12rpx 32rpx rgba(0, 0, 0, 0.15);
+
+// 玻璃态模糊效果
+$ios-blur-sm: blur(10rpx);
+$ios-blur-md: blur(20rpx);
+$ios-blur-lg: blur(30rpx);
+
+// ==================== 字体系统 ====================
+// San Francisco 字体栈
+$ios-font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
+
+// 字体大小（rpx）
+$ios-font-size-xs: 22rpx;   // 11pt
+$ios-font-size-sm: 26rpx;   // 13pt
+$ios-font-size-base: 30rpx; // 15pt
+$ios-font-size-md: 34rpx;  // 17pt
+$ios-font-size-lg: 40rpx;  // 20pt
+$ios-font-size-xl: 48rpx;  // 24pt
+$ios-font-size-xxl: 56rpx; // 28pt
+
+// 字重
+$ios-font-weight-regular: 400;
+$ios-font-weight-medium: 500;
+$ios-font-weight-semibold: 600;
+$ios-font-weight-bold: 700;
+
+// 行高
+$ios-line-height-tight: 1.2;
+$ios-line-height-normal: 1.4;
+$ios-line-height-relaxed: 1.6;
+
+// ==================== 间距系统 ====================
+$ios-spacing-xs: 8rpx;
+$ios-spacing-sm: 12rpx;
+$ios-spacing-md: 16rpx;
+$ios-spacing-lg: 24rpx;
+$ios-spacing-xl: 32rpx;
+$ios-spacing-xxl: 48rpx;
+$ios-spacing-xxxl: 64rpx;
+
+// ==================== 按钮样式 ====================
+// 按钮高度
+$ios-button-height-sm: 44rpx;
+$ios-button-height-md: 50rpx;
+$ios-button-height-lg: 56rpx;
+
+// 按钮内边距
+$ios-button-padding-x-sm: 16rpx;
+$ios-button-padding-x-md: 24rpx;
+$ios-button-padding-x-lg: 32rpx;
+
+// ==================== 输入框样式 ====================
+$ios-input-height: 44rpx;
+$ios-input-padding-x: 16rpx;
+$ios-input-border-radius: $ios-radius-sm;
+
+// ==================== 卡片样式 ====================
+$ios-card-padding: 24rpx;
+$ios-card-border-radius: $ios-radius-md;
+$ios-card-background: $ios-bg-primary;
+
+// ==================== 导航栏样式 ====================
+$ios-navbar-height: 88rpx;
+$ios-navbar-bg: rgba(255, 255, 255, 0.8); // 玻璃态背景
+$ios-navbar-blur: $ios-blur-md;
+
+// ==================== TabBar 样式 ====================
+$ios-tabbar-height: 98rpx;
+$ios-tabbar-bg: rgba(255, 255, 255, 0.8); // 玻璃态背景
+
+// ==================== 动画 ====================
+$ios-transition-fast: 0.15s ease-out;
+$ios-transition-base: 0.25s ease-out;
+$ios-transition-slow: 0.35s ease-out;
+
+// ==================== Z-index 层级 ====================
+$ios-z-index-base: 1;
+$ios-z-index-dropdown: 1000;
+$ios-z-index-sticky: 1020;
+$ios-z-index-fixed: 1030;
+$ios-z-index-modal-backdrop: 1040;
+$ios-z-index-modal: 1050;
+$ios-z-index-popover: 1060;
+$ios-z-index-tooltip: 1070;
+
+// ==================== Mixins ====================
+// 玻璃态效果
+@mixin ios-glassmorphism($opacity: 0.8, $blur: $ios-blur-md) {
+	background: rgba(255, 255, 255, $opacity);
+	backdrop-filter: $blur;
+	-webkit-backdrop-filter: $blur;
+}
+
+// 柔和阴影
+@mixin ios-shadow($level: md) {
+	@if $level == sm {
+		box-shadow: $ios-shadow-sm;
+	} @else if $level == md {
+		box-shadow: $ios-shadow-md;
+	} @else if $level == lg {
+		box-shadow: $ios-shadow-lg;
+	} @else if $level == xl {
+		box-shadow: $ios-shadow-xl;
+	}
+}
+
+// 按钮状态
+@mixin ios-button-state($bg-color: $ios-blue) {
+	background-color: $bg-color;
+	color: #FFFFFF;
+	border-radius: $ios-radius-sm;
+	font-weight: $ios-font-weight-semibold;
+	transition: all $ios-transition-base;
+	
+	&:active {
+		opacity: 0.7;
+		transform: scale(0.98);
+	}
+	
+	&:disabled {
+		opacity: 0.5;
+		background-color: $ios-gray-3;
+		color: $ios-text-disabled;
+	}
+}
+
+// 输入框样式
+@mixin ios-input {
+	height: $ios-input-height;
+	padding: 0 $ios-input-padding-x;
+	background-color: $ios-gray-1;
+	border: none;
+	border-radius: $ios-input-border-radius;
+	font-size: $ios-font-size-base;
+	color: $ios-text-primary;
+	font-family: $ios-font-family;
+	transition: all $ios-transition-base;
+	
+	&:focus {
+		background-color: $ios-bg-primary;
+		box-shadow: 0 0 0 2rpx $ios-blue;
+	}
+	
+	&::placeholder {
+		color: $ios-gray-4;
+	}
+}
+
+// 卡片样式
+@mixin ios-card {
+	background-color: $ios-card-background;
+	border-radius: $ios-card-border-radius;
+	padding: $ios-card-padding;
+	@include ios-shadow(md);
+}
+
+// 分段控件样式
+@mixin ios-segmented-control {
+	display: flex;
+	background-color: $ios-gray-2;
+	border-radius: $ios-radius-sm;
+	padding: 4rpx;
+	
+	.segment-item {
+		flex: 1;
+		padding: 8rpx 16rpx;
+		text-align: center;
+		border-radius: $ios-radius-xs;
+		font-size: $ios-font-size-sm;
+		color: $ios-text-secondary;
+		transition: all $ios-transition-fast;
+		
+		&.active {
+			background-color: $ios-bg-primary;
+			color: $ios-text-primary;
+			@include ios-shadow(sm);
+		}
+	}
+}
+
+// 开关样式
+@mixin ios-toggle($size: 44rpx) {
+	width: $size * 1.8;
+	height: $size;
+	background-color: $ios-gray-3;
+	border-radius: $ios-radius-full;
+	position: relative;
+	transition: background-color $ios-transition-base;
+	
+	&::after {
+		content: '';
+		position: absolute;
+		width: $size - 8rpx;
+		height: $size - 8rpx;
+		background-color: #FFFFFF;
+		border-radius: 50%;
+		top: 4rpx;
+		left: 4rpx;
+		transition: transform $ios-transition-base;
+		box-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.2);
+	}
+	
+	&.active {
+		background-color: $ios-green;
+		
+		&::after {
+			transform: translateX($size - 4rpx);
+		}
+	}
+}
+
+// 文本样式
+@mixin ios-text($size: base, $weight: regular, $color: primary) {
+	font-family: $ios-font-family;
+	
+	@if $size == xs {
+		font-size: $ios-font-size-xs;
+	} @else if $size == sm {
+		font-size: $ios-font-size-sm;
+	} @else if $size == base {
+		font-size: $ios-font-size-base;
+	} @else if $size == md {
+		font-size: $ios-font-size-md;
+	} @else if $size == lg {
+		font-size: $ios-font-size-lg;
+	} @else if $size == xl {
+		font-size: $ios-font-size-xl;
+	}
+	
+	@if $weight == regular {
+		font-weight: $ios-font-weight-regular;
+	} @else if $weight == medium {
+		font-weight: $ios-font-weight-medium;
+	} @else if $weight == semibold {
+		font-weight: $ios-font-weight-semibold;
+	} @else if $weight == bold {
+		font-weight: $ios-font-weight-bold;
+	}
+	
+	@if $color == primary {
+		color: $ios-text-primary;
+	} @else if $color == secondary {
+		color: $ios-text-secondary;
+	} @else if $color == tertiary {
+		color: $ios-text-tertiary;
+	} @else if $color == disabled {
+		color: $ios-text-disabled;
+	}
+}

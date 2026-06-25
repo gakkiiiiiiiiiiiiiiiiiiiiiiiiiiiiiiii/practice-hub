@@ -2,13 +2,13 @@
  * 用户状态管理
  */
 import { defineStore } from 'pinia'
-import { getUserInfo, updateUserProfile } from '@/api/index'
+import { getUserInfo, updateUserProfile, appLogout } from '@/api/index'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
     token: uni.getStorageSync('auth_token') || '',
     userInfo: uni.getStorageSync('user_info') || null,
-    isVip: false,
+    hasPackage: false,
     permissions: {} // 格式: { bankId: 'Trial' | 'VIP' | 'None' }
   }),
 
@@ -32,7 +32,7 @@ export const useUserStore = defineStore('user', {
         const res = await post('/auth/login', loginData)
         this.setToken(res.token)
         this.setUserInfo(res.userInfo)
-        this.setVipStatus(res.isVip)
+        this.setPackageStatus(res.hasPackage)
         this.setPermissions(res.permissions || {})
         return res
       } catch (error) {
@@ -56,7 +56,7 @@ export const useUserStore = defineStore('user', {
         
         this.setToken(res.token)
         this.setUserInfo(res.userInfo)
-        this.setVipStatus(res.isVip)
+        this.setPackageStatus(res.hasPackage)
         this.setPermissions(res.permissions || {})
         return res
       } catch (error) {
@@ -81,10 +81,10 @@ export const useUserStore = defineStore('user', {
     },
 
     /**
-     * 设置 VIP 状态
+     * 设置套餐会员状态
      */
-    setVipStatus(isVip) {
-      this.isVip = isVip
+    setPackageStatus(hasPackage) {
+      this.hasPackage = hasPackage
     },
 
     /**
@@ -104,10 +104,17 @@ export const useUserStore = defineStore('user', {
     /**
      * 退出登录
      */
-    logout() {
+    async logout() {
+      try {
+        if (this.token) {
+          await appLogout()
+        }
+      } catch (error) {
+        console.warn('退出登录接口调用失败:', error)
+      }
       this.token = ''
       this.userInfo = null
-      this.isVip = false
+      this.hasPackage = false
       this.permissions = {}
       uni.removeStorageSync('auth_token')
       uni.removeStorageSync('user_info')
@@ -123,7 +130,7 @@ export const useUserStore = defineStore('user', {
       try {
         const res = await getUserInfo()
         this.setUserInfo(res)
-        this.setVipStatus(res.isVip || false)
+        this.setPackageStatus(res.hasPackage || res.packageStatus || false)
         this.setPermissions(res.permissions || {})
         return res
       } catch (error) {
@@ -132,4 +139,3 @@ export const useUserStore = defineStore('user', {
     }
   }
 })
-

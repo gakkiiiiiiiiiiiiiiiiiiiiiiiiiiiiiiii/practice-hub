@@ -1,69 +1,55 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { RedisService } from '../../common/redis/redis.service';
-
-const QUOTES = [
-  '宝剑锋从磨砺出，梅花香自苦寒来。',
-  '不经一番寒彻骨，怎得梅花扑鼻香。',
-  '路漫漫其修远兮，吾将上下而求索。',
-  '天行健，君子以自强不息。',
-  '业精于勤，荒于嬉；行成于思，毁于随。',
-  '书山有路勤为径，学海无涯苦作舟。',
-  '只要功夫深，铁杵磨成针。',
-  '不积跬步，无以至千里；不积小流，无以成江海。',
-];
+import { BannerService } from '../banner/banner.service';
+import { SystemService } from '../system/system.service';
 
 @Injectable()
 export class HomeService {
   constructor(
-    private redisService: RedisService,
     private configService: ConfigService,
+    private bannerService: BannerService,
+    private systemService: SystemService,
   ) {}
 
   /**
    * 获取首页配置
    */
-  async getHomeConfig() {
+  async getHomeConfig(userId?: number) {
     // 从配置或数据库获取倒计时日期
     const countdownDate = this.configService.get('COUNTDOWN_DATE', '2024-12-23');
     
-    // Banner 列表（可以从数据库或配置获取）
-    const banners = [
-      {
-        id: 1,
-        image: 'https://example.com/banner1.jpg',
-        link: '/pages/subject/1',
-      },
-    ];
+    // 从数据库获取启用的轮播图列表
+    const banners = await this.bannerService.getActiveBanners();
+    const popup = await this.systemService.getHomePopupConfigForUser(userId);
 
     return {
       countdown_date: countdownDate,
       banners,
+      popup,
     };
   }
 
   /**
-   * 获取每日励志语录
+   * 获取广播消息
+   * 返回所有广播消息列表，支持前端轮播显示
+   * 从系统配置中读取广播消息列表
    */
   async getDailyQuote() {
-    const today = new Date().toISOString().split('T')[0];
-    const cacheKey = `daily_quote:${today}`;
-
-    // 尝试从缓存获取
-    let quote = await this.redisService.get(cacheKey);
-
-    if (!quote) {
-      // 随机选择一条语录
-      const randomIndex = Math.floor(Math.random() * QUOTES.length);
-      quote = QUOTES[randomIndex];
-
-      // 缓存到 Redis，24小时过期
-      await this.redisService.set(cacheKey, quote, 86400);
+    const quotes = await this.systemService.getDailyQuotes();
+    
+    if (quotes.length === 0) {
+      return { quotes: ['研途漫漫，终抵群星。'] };
     }
 
-    return { quote };
+    // 返回所有广播消息，由前端进行轮播
+    return { quotes };
+  }
+
+  async getFaqs() {
+    return this.systemService.getFaqConfig();
+  }
+
+  async getMiniappVersion() {
+    return this.systemService.getMiniappVersionPolicy();
   }
 }
-

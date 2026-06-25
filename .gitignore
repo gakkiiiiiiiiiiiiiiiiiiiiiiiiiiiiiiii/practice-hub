@@ -1,0 +1,11 @@
+.DS_Store
+.cursor/
+
+node_modules/
+dist/
+unpackage/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example

@@ -7,6 +7,7 @@
 const TABBAR_PAGES = [
   '/pages/index/index',
   '/pages/bank/index',
+  '/pages/category/index',
   '/pages/user/index'
 ]
 

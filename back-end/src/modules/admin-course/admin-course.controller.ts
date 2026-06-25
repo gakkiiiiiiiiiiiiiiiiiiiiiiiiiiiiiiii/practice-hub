@@ -36,6 +36,7 @@ import { BatchUpdateStatusDto } from './dto/batch-update-status.dto';
 import { BatchAdjustCoursePriceDto } from './dto/batch-adjust-price.dto';
 import { CreateCourseFileDto, UpdateCourseFileDto } from './dto/course-file.dto';
 import { SetCourseDefaultParamsDto } from '../system/dto/set-course-default-params.dto';
+import { SetCourseSimilarityConfigDto } from './dto/set-course-similarity-config.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AppUser, AppUserRole } from '../../database/entities/app-user.entity';
 
@@ -75,6 +76,22 @@ export class AdminCourseController {
 		return CommonResponseDto.success(result);
 	}
 
+	@Get('similarity-config')
+	@Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN, AdminRole.AGENT)
+	@ApiOperation({ summary: '获取课程同名/类似检测配置' })
+	async getCourseSimilarityConfig() {
+		const result = await this.adminCourseService.getCourseSimilarityConfig();
+		return CommonResponseDto.success(result);
+	}
+
+	@Put('similarity-config')
+	@Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN)
+	@ApiOperation({ summary: '设置课程同名/类似检测配置' })
+	async setCourseSimilarityConfig(@Body() dto: SetCourseSimilarityConfigDto) {
+		const result = await this.adminCourseService.setCourseSimilarityConfig(dto as Record<string, any>);
+		return CommonResponseDto.success(result);
+	}
+
 	@Put(':id')
 	@Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN)
 	@ApiOperation({ summary: '编辑课程' })
@@ -87,6 +104,41 @@ export class AdminCourseController {
 		return CommonResponseDto.success(result);
 	}
 
+	@Get('options')
+	@Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN, AdminRole.AGENT)
+	@ApiOperation({ summary: '获取课程下拉选项（轻量）' })
+	async getCourseOptions(@Query('name') name?: string, @Query('status') status?: string) {
+		const parsedStatus =
+			status !== undefined && status !== '' ? Number(status) : undefined;
+		const result = await this.adminCourseService.getCourseOptions({
+			name,
+			status: parsedStatus !== undefined && !Number.isNaN(parsedStatus) ? parsedStatus : undefined,
+		});
+		return CommonResponseDto.success(result);
+	}
+
+	@Get('similar-groups')
+	@Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN, AdminRole.AGENT)
+	@ApiOperation({ summary: '检测同名或类似课程分组' })
+	async getSimilarCourseGroups(
+		@Query('name') name?: string,
+		@Query('subject') subject?: string,
+		@Query('category') category?: string,
+		@Query('subCategory') subCategory?: string,
+		@Query('status') status?: string,
+	) {
+		const parsedStatus =
+			status !== undefined && status !== '' ? Number(status) : undefined;
+		const result = await this.adminCourseService.getSimilarCourseGroups({
+			name,
+			subject,
+			category,
+			subCategory,
+			status: parsedStatus !== undefined && !Number.isNaN(parsedStatus) ? parsedStatus : undefined,
+		});
+		return CommonResponseDto.success(result);
+	}
+
 	@Get()
 	@Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN, AdminRole.AGENT)
 	@ApiOperation({ summary: '获取课程列表' })
@@ -96,6 +148,7 @@ export class AdminCourseController {
 		@Query('category') category?: string,
 		@Query('subCategory') subCategory?: string,
 		@Query('status') status?: string,
+		@Query('similarOnly') similarOnly?: string,
 	) {
 		const parsedStatus =
 			status !== undefined && status !== '' ? Number(status) : undefined;
@@ -105,6 +158,7 @@ export class AdminCourseController {
 			category,
 			subCategory,
 			status: parsedStatus !== undefined && !Number.isNaN(parsedStatus) ? parsedStatus : undefined,
+			similarOnly: similarOnly === '1' || similarOnly === 'true',
 		});
 		return CommonResponseDto.success(result);
 	}
@@ -179,6 +233,22 @@ export class AdminCourseController {
 		return CommonResponseDto.success(result);
 	}
 
+	@Get('preview-cache/health')
+	@Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN)
+	@ApiOperation({ summary: '预览缓存健康巡检报告（空白/缺失/不完整）' })
+	async getPreviewCacheHealth() {
+		const result = await this.adminCourseService.getPreviewCacheHealthReport();
+		return CommonResponseDto.success(result);
+	}
+
+	@Post('preview-cache/scheduled-maintenance')
+	@Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN)
+	@ApiOperation({ summary: '立即执行预览缓存定时巡检与自动修复' })
+	async runPreviewCacheScheduledMaintenance() {
+		const result = await this.adminCourseService.runScheduledPreviewCacheMaintenance();
+		return CommonResponseDto.success(result);
+	}
+
 	@Get('preview-cache/targets')
 	@Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN)
 	@ApiOperation({ summary: '获取支持图片缓存的文件类课程列表' })
@@ -226,14 +296,6 @@ export class AdminCourseController {
 	@ApiOperation({ summary: '批量调整课程价格' })
 	async batchAdjustPrice(@Body() dto: BatchAdjustCoursePriceDto) {
 		const result = await this.adminCourseService.batchAdjustPrice(dto);
-		return CommonResponseDto.success(result);
-	}
-
-	@Post('virtual-pay-goods/sync-all')
-	@Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN)
-	@ApiOperation({ summary: '同步全部付费课程的微信虚拟道具价格' })
-	async syncAllCourseVirtualPayGoods() {
-		const result = await this.adminCourseService.syncAllCourseVirtualPayGoods();
 		return CommonResponseDto.success(result);
 	}
 
@@ -485,8 +547,8 @@ export class AppCourseAdminController {
 			major: this.optionalText(body?.major),
 			exam_year: this.optionalText(body?.exam_year || body?.examYear),
 			answer_year: this.optionalText(body?.answer_year || body?.answerYear),
-			price: this.optionalNumber(body?.price, 0.5),
-			agent_price: this.optionalNumber(body?.agent_price ?? body?.agentPrice, 0.1),
+			price: this.optionalNumber(body?.price, 1),
+			agent_price: this.optionalNumber(body?.agent_price ?? body?.agentPrice, 1),
 			is_free: this.optionalNumber(body?.is_free ?? body?.isFree, 0),
 			validity_days: this.optionalNumber(body?.validity_days ?? body?.validityDays, 365),
 			introduction: this.optionalText(body?.introduction),

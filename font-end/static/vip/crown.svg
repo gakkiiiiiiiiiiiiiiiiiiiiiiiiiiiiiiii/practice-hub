@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 96" fill="none">
+  <defs>
+    <linearGradient id="crownMetal" x1="20" y1="8" x2="100" y2="88" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4F7FA"/>
+      <stop offset="0.35" stop-color="#C8D0D8"/>
+      <stop offset="0.7" stop-color="#9AA5B0"/>
+      <stop offset="1" stop-color="#6E7A86"/>
+    </linearGradient>
+    <linearGradient id="crownShine" x1="30" y1="10" x2="70" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="gemBlue" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(60 52) rotate(90) scale(12)">
+      <stop stop-color="#8FD4FF"/>
+      <stop offset="0.55" stop-color="#3B8CFF"/>
+      <stop offset="1" stop-color="#1E5FD4"/>
+    </radialGradient>
+    <filter id="crownShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <g filter="url(#crownShadow)">
+    <path d="M18 68L24 34L38 48L60 22L82 48L96 34L102 68H18Z" fill="url(#crownMetal)"/>
+    <path d="M18 68H102V76C102 79.3137 99.3137 82 96 82H24C20.6863 82 18 79.3137 18 76V68Z" fill="url(#crownMetal)"/>
+    <path d="M24 34L38 48L60 22L82 48L96 34L88 42L60 30L32 42L24 34Z" fill="url(#crownShine)" fill-opacity="0.55"/>
+    <circle cx="60" cy="52" r="9" fill="url(#gemBlue)"/>
+    <circle cx="57" cy="49" r="3" fill="#FFFFFF" fill-opacity="0.55"/>
+  </g>
+</svg>

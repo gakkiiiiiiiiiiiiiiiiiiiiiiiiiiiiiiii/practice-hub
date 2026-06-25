@@ -15,8 +15,8 @@
 					<a-tag v-if="formState.type" color="blue" class="type-tag">
 						{{ getTypeName(formState.type) }}
 					</a-tag>
-					<a-tag v-if="selectedSubjectId && selectedChapterId" color="green" class="location-tag">
-						{{ getSubjectName(selectedSubjectId) }} / {{ getChapterName(selectedChapterId) }}
+					<a-tag v-if="selectedCourseId && selectedChapterId" color="green" class="location-tag">
+						{{ getCourseName(selectedCourseId) }} / {{ getChapterName(selectedChapterId) }}
 					</a-tag>
 				</div>
 			</template>
@@ -34,17 +34,17 @@
 					<span class="section-title">基本信息</span>
 				</a-divider>
 
-				<a-form-item label="科目" name="subjectId">
+				<a-form-item label="课程" name="courseId">
 					<a-select
-						v-model:value="selectedSubjectId"
-						placeholder="请选择科目"
-						@change="handleSubjectChange"
-						:loading="!subjectList.length"
+						v-model:value="selectedCourseId"
+						placeholder="请选择课程"
+						@change="handleCourseChange"
+						:loading="!courseList.length"
 						show-search
 						:filter-option="filterOption"
 					>
-						<a-select-option v-for="subject in subjectList" :key="subject.id" :value="subject.id">
-							{{ subject.name }}
+						<a-select-option v-for="course in courseList" :key="course.id" :value="course.id">
+							{{ course.name }}
 						</a-select-option>
 					</a-select>
 				</a-form-item>
@@ -52,10 +52,10 @@
 				<a-form-item label="章节" name="chapter_id">
 					<a-select
 						v-model:value="selectedChapterId"
-						placeholder="请先选择科目"
-						:disabled="!selectedSubjectId"
+						placeholder="请先选择课程"
+						:disabled="!selectedCourseId"
 						@change="handleChapterChange"
-						:loading="selectedSubjectId && !chapterList.length"
+						:loading="selectedCourseId && !chapterList.length"
 						show-search
 						:filter-option="filterOption"
 					>
@@ -63,7 +63,7 @@
 							{{ chapter.name }}
 						</a-select-option>
 					</a-select>
-					<div v-if="!selectedSubjectId" class="form-tip">请先选择科目</div>
+					<div v-if="!selectedCourseId" class="form-tip">请先选择课程</div>
 				</a-form-item>
 
 				<a-form-item label="题型" name="type">
@@ -83,6 +83,9 @@
 						<a-radio-button :value="5">
 							<span class="type-item">阅读理解</span>
 						</a-radio-button>
+						<a-radio-button :value="6">
+							<span class="type-item">简答题</span>
+						</a-radio-button>
 					</a-radio-group>
 				</a-form-item>
 
@@ -91,6 +94,64 @@
 					<span class="section-title">题目内容</span>
 				</a-divider>
 
+				<!-- 图片转文字（OCR）独立区域：粘贴或上传图片，base64 传输，识别结果可插入题干/选项/解析 -->
+				<a-form-item label="图片转文字" class="ocr-zone-form-item">
+					<div class="ocr-zone">
+						<div class="ocr-zone-tip">粘贴或上传图片，识别后的文字将插入到下方选择的位置</div>
+						<div class="ocr-zone-insert-row">
+							<span class="ocr-zone-insert-label">插入到：</span>
+							<a-radio-group v-model:value="ocrInsertTarget" class="ocr-zone-insert-radio">
+								<a-radio-button value="stem">题干</a-radio-button>
+								<a-radio-button value="analysis">解析</a-radio-button>
+								<a-radio-button
+									value="option"
+									:disabled="formState.type === QuestionType.FILL_BLANK || formState.type === QuestionType.JUDGE || formState.type === QuestionType.SHORT_ANSWER"
+								>
+									选项
+								</a-radio-button>
+							</a-radio-group>
+							<template v-if="ocrInsertTarget === 'option' && formState.options.length">
+								<a-select
+									v-model:value="ocrInsertOptionIndex"
+									class="ocr-zone-option-select"
+									:options="ocrOptionSelectOptions"
+								/>
+							</template>
+						</div>
+						<div class="ocr-zone-actions">
+							<div
+								ref="ocrPasteAreaRef"
+								class="ocr-paste-area"
+								tabindex="0"
+								@paste="handleOcrZonePaste"
+								@click="focusOcrPasteArea"
+							>
+								<span v-if="!ocrZoneDataUrl" class="ocr-paste-placeholder">在此处粘贴图片（Ctrl+V）</span>
+								<img v-else :src="ocrZoneDataUrl" class="ocr-preview-img" alt="预览" />
+							</div>
+							<div class="ocr-upload-area">
+								<a-upload
+									:show-upload-list="false"
+									accept="image/jpeg,image/png,image/gif,image/webp"
+									:before-upload="handleOcrZoneUpload"
+								>
+									<a-button type="default">
+										<template #icon><plus-outlined /></template>
+										选择图片上传
+									</a-button>
+								</a-upload>
+							</div>
+						</div>
+						<div v-if="ocrZoneDataUrl" class="ocr-zone-btns">
+							<a-button type="primary" :loading="ocrZoneLoading" @click="runOcrZoneAndInsert">
+								<template #icon><scan-outlined /></template>
+								{{ ocrZoneSubmitLabel }}
+							</a-button>
+							<a-button @click="clearOcrZone">清空</a-button>
+						</div>
+					</div>
+				</a-form-item>
+
 				<a-form-item label="题干" name="stem">
 					<div class="editor-wrapper">
 						<WangEditor v-model="formState.stem" placeholder="请输入题干内容" />
@@ -98,13 +159,16 @@
 					</div>
 				</a-form-item>
 
-				<a-form-item v-if="formState.type !== 4" label="选项">
+				<a-form-item
+					v-if="formState.type !== QuestionType.FILL_BLANK && formState.type !== QuestionType.SHORT_ANSWER"
+					label="选项"
+				>
 					<div class="options-container">
 						<div class="options-header">
 							<span class="options-count">共 {{ formState.options.length }} 个选项</span>
 						</div>
 						<a-alert
-							v-if="formState.type === 3"
+							v-if="formState.type === QuestionType.JUDGE"
 							message="判断题固定为两个选项：正确/错误"
 							type="info"
 							show-icon
@@ -112,7 +176,7 @@
 							style="margin-bottom: 16px"
 						/>
 						<!-- 判断题：固定两个选项（正确/错误） -->
-						<template v-if="formState.type === 3">
+						<template v-if="formState.type === QuestionType.JUDGE">
 							<div v-for="(option, index) in formState.options" :key="index" class="option-item option-item-disabled">
 								<div style="flex: 1">
 									<a-input v-model:value="option.text" :placeholder="index === 0 ? '正确' : '错误'" :disabled="true" />
@@ -154,17 +218,34 @@
 				</a-form-item>
 
 				<a-form-item label="正确答案" name="answer">
-					<!-- 填空题：文本输入 -->
-					<a-input
-						v-if="formState.type === 4"
-						v-model:value="answerInput"
-						placeholder="请输入正确答案"
-						@change="handleAnswerChange"
-						class="answer-input"
-					/>
+					<!-- 填空题：支持多个答案输入 -->
+					<div v-if="formState.type === QuestionType.FILL_BLANK" class="fill-blank-answers">
+						<div v-for="(answer, index) in fillBlankAnswers" :key="index" class="fill-blank-item">
+							<a-input
+								v-model:value="fillBlankAnswers[index]"
+								:placeholder="`请输入第${index + 1}个答案`"
+								class="answer-input"
+								@change="handleFillBlankAnswerChange"
+							/>
+							<a-button
+								v-if="fillBlankAnswers.length > 1"
+								type="text"
+								danger
+								@click="removeFillBlankAnswer(index)"
+								class="remove-btn"
+							>
+								<template #icon><delete-outlined /></template>
+							</a-button>
+						</div>
+						<a-button type="dashed" @click="addFillBlankAnswer" class="add-answer-btn">
+							<template #icon><plus-outlined /></template>
+							添加答案
+						</a-button>
+						<div class="form-tip">填空题支持多个答案，用户只需填写所有正确答案即可</div>
+					</div>
 					<!-- 单选题：单选框 -->
 					<a-radio-group
-						v-else-if="formState.type === 1"
+						v-else-if="formState.type === QuestionType.SINGLE_CHOICE"
 						v-model:value="answerInput"
 						@change="handleAnswerChange"
 						class="answer-radio-group"
@@ -180,7 +261,7 @@
 					</a-radio-group>
 					<!-- 判断题：单选框（只显示正确/错误，不显示A/B） -->
 					<a-radio-group
-						v-else-if="formState.type === 3"
+						v-else-if="formState.type === QuestionType.JUDGE"
 						v-model:value="answerInput"
 						@change="handleAnswerChange"
 						class="answer-radio-group"
@@ -196,7 +277,7 @@
 					</a-radio-group>
 					<!-- 多选题：多选框 -->
 					<a-checkbox-group
-						v-else-if="formState.type === 2"
+						v-else-if="formState.type === QuestionType.MULTIPLE_CHOICE"
 						v-model:value="answerArray"
 						@change="handleAnswerArrayChange"
 						class="answer-checkbox-group"
@@ -210,6 +291,39 @@
 							<span class="answer-label">{{ getOptionLabel(index) }}</span>
 						</a-checkbox>
 					</a-checkbox-group>
+					<!-- 简答题：支持文本和图片参考答案 -->
+					<div v-else-if="formState.type === QuestionType.SHORT_ANSWER" class="short-answer-answers">
+						<a-tabs default-active-key="text">
+							<a-tab-pane key="text" tab="文本答案">
+								<a-textarea
+									v-model:value="shortAnswerText"
+									placeholder="请输入参考答案（文本）"
+									:rows="6"
+									@change="handleShortAnswerTextChange"
+									class="answer-textarea"
+								/>
+							</a-tab-pane>
+							<a-tab-pane key="image" tab="图片答案">
+								<div class="image-answer-upload">
+									<a-upload
+										v-model:file-list="shortAnswerImageList"
+										list-type="picture-card"
+										:max-count="1"
+										:before-upload="beforeUpload"
+										@preview="handlePreview"
+										@remove="handleRemove"
+										:custom-request="handleImageUpload"
+									>
+										<div v-if="shortAnswerImageList.length < 1">
+											<plus-outlined />
+											<div style="margin-top: 8px">上传图片</div>
+										</div>
+									</a-upload>
+								</div>
+								<div class="form-tip">简答题参考答案可以是文本或图片，二选一即可</div>
+							</a-tab-pane>
+						</a-tabs>
+					</div>
 					<!-- 阅读理解：文本输入（暂时） -->
 					<a-input
 						v-else
@@ -218,7 +332,7 @@
 						@change="handleAnswerChange"
 						class="answer-input"
 					/>
-					<div v-if="formState.type === 2" class="form-tip">多选题可以选择多个答案</div>
+					<div v-if="formState.type === QuestionType.MULTIPLE_CHOICE" class="form-tip">多选题可以选择多个答案</div>
 				</a-form-item>
 
 				<!-- 解析说明 -->
@@ -266,21 +380,58 @@
 import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { message } from 'ant-design-vue';
-import { PlusOutlined, CheckOutlined, ArrowLeftOutlined } from '@ant-design/icons-vue';
+import { PlusOutlined, CheckOutlined, ArrowLeftOutlined, DeleteOutlined, ScanOutlined } from '@ant-design/icons-vue';
 import WangEditor from '@/components/WangEditor/index.vue';
 import OptionEditor from '@/components/OptionEditor/index.vue';
-import { getQuestionDetail, createQuestion, updateQuestion, getSubjectList, getChapterList } from '@/api/question';
+import { getQuestionDetail, createQuestion, updateQuestion, getChapterList } from '@/api/question';
+import { getCourseList } from '@/api/course';
+import { uploadImage } from '@/api/upload';
+import { ocrImageBase64 } from '@/api/process-pdf';
+import { proxyImageUrlsInHtml, reverseProxyUrlsInHtml } from '@/utils/imageProxy';
 
 const router = useRouter();
 const route = useRoute();
 
+// 题型常量
+const QuestionType = {
+	SINGLE_CHOICE: 1, // 单选题
+	MULTIPLE_CHOICE: 2, // 多选题
+	JUDGE: 3, // 判断题
+	FILL_BLANK: 4, // 填空题
+	READING_COMPREHENSION: 5, // 阅读理解
+	SHORT_ANSWER: 6, // 简答题
+} as const;
+
 const formRef = ref();
 const loading = ref(false);
-const subjectList = ref([]);
+const courseList = ref([]);
 const chapterList = ref([]);
 
 const questionId = computed(() => route.params.id as string | undefined);
 const isEdit = computed(() => !!questionId.value);
+
+// ==================== 题型判断辅助函数 ====================
+
+/**
+ * 判断题型是否需要选项
+ */
+const needsOptions = (type: number): boolean => {
+	return type !== QuestionType.FILL_BLANK && type !== QuestionType.SHORT_ANSWER;
+};
+
+/**
+ * 判断题型是否需要验证答案范围
+ */
+const needsAnswerValidation = (type: number): boolean => {
+	return type !== QuestionType.FILL_BLANK && type !== QuestionType.SHORT_ANSWER;
+};
+
+/**
+ * 判断题型是否需要将答案转换为大写
+ */
+const needsUpperCaseAnswer = (type: number): boolean => {
+	return type !== QuestionType.FILL_BLANK && type !== QuestionType.SHORT_ANSWER;
+};
 
 const formState = ref({
 	chapter_id: undefined,
@@ -296,14 +447,19 @@ const formState = ref({
 
 // 初始化选项（根据题型）
 const initOptions = () => {
-	if (formState.value.type === 3) {
+	const { type } = formState.value;
+
+	if (type === QuestionType.JUDGE) {
 		// 判断题：固定为"正确"和"错误"
 		formState.value.options = [
 			{ label: 'A', text: '正确' },
 			{ label: 'B', text: '错误' },
 		];
-	} else if (formState.value.type !== 4) {
-		// 其他题型（非填空题）：至少两个选项
+	} else if (!needsOptions(type)) {
+		// 填空题和简答题不需要选项
+		formState.value.options = [];
+	} else {
+		// 其他题型：至少两个选项
 		if (formState.value.options.length < 2) {
 			formState.value.options = [
 				{ label: 'A', text: '' },
@@ -317,11 +473,24 @@ const initOptions = () => {
 const answerInput = ref('');
 // 多选题的答案数组
 const answerArray = ref<string[]>([]);
+// 填空题的答案数组（支持多个答案）
+const fillBlankAnswers = ref<string[]>(['']);
+// 简答题文本答案
+const shortAnswerText = ref('');
+// 简答题图片答案列表
+const shortAnswerImageList = ref<any[]>([]);
+// 独立 OCR 区域：粘贴/上传的图片预览（data URL）与识别中状态
+const ocrZoneDataUrl = ref('');
+const ocrZoneLoading = ref(false);
+// OCR 结果插入位置：题干 / 解析 / 选项；选选项时用 ocrInsertOptionIndex
+const ocrInsertTarget = ref<'stem' | 'analysis' | 'option'>('stem');
+const ocrInsertOptionIndex = ref(0);
 // 保存待回显的答案数据
 const pendingAnswerData = ref<string[]>([]);
 
-// 科目和章节ID（用于前端选择，提交时需要转换为 chapter_id）
-const selectedSubjectId = ref<number | undefined>(undefined);
+
+// 课程和章节ID（用于前端选择，提交时需要转换为 chapter_id）
+const selectedCourseId = ref<number | undefined>(undefined);
 const selectedChapterId = ref<number | undefined>(undefined);
 
 const rules = {
@@ -331,20 +500,20 @@ const rules = {
 	answer: [{ required: true, message: '请输入正确答案', trigger: 'blur' }],
 };
 
-const fetchSubjects = async () => {
+const fetchCourses = async () => {
 	try {
-		const res = await getSubjectList();
+		const res = await getCourseList();
 		// 后端返回的是数组，不是分页对象
-		subjectList.value = Array.isArray(res.data) ? res.data : res.data.list || [];
+		courseList.value = Array.isArray(res.data) ? res.data : res.data.list || [];
 	} catch (error) {
-		console.error('获取科目列表失败:', error);
+		console.error('获取课程列表失败:', error);
 	}
 };
 
-const fetchChapters = async (subjectId: number) => {
+const fetchChapters = async (courseId: number) => {
 	try {
 		const res = await getChapterList({
-			subjectId,
+			courseId,
 		});
 		// 后端返回的是数组，不是分页对象
 		chapterList.value = Array.isArray(res.data) ? res.data : res.data.list || [];
@@ -372,19 +541,19 @@ const fetchQuestionDetail = async () => {
 		// - id, chapter_id, parent_id, type, stem, answer, analysis, difficulty
 		// - options: [{label: string, text: string}] (已格式化)
 		// - chapter: {id, name}
-		// - subject: {id, name} (直接在 result 下，不在 chapter 下)
+		// - course: {id, name} (直接在 result 下，不在 chapter 下)
 
-		// 处理章节和科目信息
+		// 处理章节和课程信息
 		if (data.chapter_id) {
 			formState.value.chapter_id = data.chapter_id;
 			selectedChapterId.value = data.chapter_id;
 
-			// 从 subject 字段获取科目ID（新接口结构）
-			const subjectId = data.subject?.id;
-			if (subjectId) {
-				selectedSubjectId.value = subjectId;
+			// 从 course 字段获取课程ID（新接口结构）
+			const courseId = data.course?.id;
+			if (courseId) {
+				selectedCourseId.value = courseId;
 				// 先加载章节列表，确保下拉框有数据
-				await fetchChapters(subjectId);
+				await fetchChapters(courseId);
 			}
 		}
 
@@ -397,51 +566,45 @@ const fetchQuestionDetail = async () => {
 				{ label: 'A', text: '正确' },
 				{ label: 'B', text: '错误' },
 			];
-		} else if (data.type !== 4 && data.options && Array.isArray(data.options) && data.options.length > 0) {
+		} else if (needsOptions(data.type) && data.options && Array.isArray(data.options) && data.options.length > 0) {
 			// 后端返回的选项已经是正确格式，但需要确保标签按A、B、C、D顺序重新生成
 			options = data.options.map((opt: any, index: number) => ({
 				label: getOptionLabel(index),
 				text: opt.text || opt.content || '',
 			}));
-		} else if (data.type !== 4) {
-			// 如果没有选项且不是填空题，创建默认的两个选项
+		} else if (needsOptions(data.type)) {
+			// 如果没有选项且需要选项的题型，创建默认的两个选项
 			options = [
 				{ label: 'A', text: '' },
 				{ label: 'B', text: '' },
 			];
+		} else {
+			// 填空题和简答题不需要选项
+			options = [];
 		}
 
 		// 处理答案数据
 		let answerData: string[] = [];
+		const shouldUpperCase = needsUpperCaseAnswer(data.type);
+
 		if (Array.isArray(data.answer)) {
-			// 填空题不需要转换为大写，其他题型需要
-			if (data.type === 4) {
-				answerData = data.answer.map((a: any) => String(a).trim());
-			} else {
-				answerData = data.answer.map((a: any) => String(a).trim().toUpperCase());
-			}
+			answerData = data.answer.map((a: any) => {
+				const trimmed = String(a).trim();
+				return shouldUpperCase ? trimmed.toUpperCase() : trimmed;
+			});
 		} else if (data.answer) {
 			// 如果是字符串，尝试解析
 			if (typeof data.answer === 'string') {
-				// 填空题不需要转换为大写，其他题型需要
-				if (data.type === 4) {
-					answerData = data.answer
-						.split(',')
-						.map((a: string) => a.trim())
-						.filter((a: string) => a);
-				} else {
-					answerData = data.answer
-						.split(',')
-						.map((a: string) => a.trim().toUpperCase())
-						.filter((a: string) => a);
-				}
+				answerData = data.answer
+					.split(',')
+					.map((a: string) => {
+						const trimmed = a.trim();
+						return shouldUpperCase ? trimmed.toUpperCase() : trimmed;
+					})
+					.filter((a: string) => a);
 			} else {
-				// 填空题不需要转换为大写，其他题型需要
-				if (data.type === 4) {
-					answerData = [String(data.answer).trim()];
-				} else {
-					answerData = [String(data.answer).trim().toUpperCase()];
-				}
+				const trimmed = String(data.answer).trim();
+				answerData = [shouldUpperCase ? trimmed.toUpperCase() : trimmed];
 			}
 		}
 
@@ -450,13 +613,14 @@ const fetchQuestionDetail = async () => {
 		console.log('选项数据:', options);
 
 		// 更新表单状态（使用 Object.assign 确保响应式更新）
+		// 题干/解析中的 TCB 图片替换为代理地址，避免跨域无法加载
 		Object.assign(formState.value, {
 			chapter_id: data.chapter_id,
 			type: data.type,
-			stem: data.stem || '',
+			stem: proxyImageUrlsInHtml(data.stem || ''),
 			options: options,
 			answer: answerData,
-			analysis: data.analysis || '',
+			analysis: proxyImageUrlsInHtml(data.analysis || ''),
 		});
 
 		// 保存待回显的答案数据
@@ -467,11 +631,35 @@ const fetchQuestionDetail = async () => {
 			if (pendingAnswerData.value.length === 0) return;
 
 			// 填空题不需要等待选项，直接设置答案
-			if (formState.value.type === 4) {
-				// 填空题：直接显示文本，保持原样（不转大写）
+			if (formState.value.type === QuestionType.FILL_BLANK) {
+				// 填空题：设置答案数组
+				if (pendingAnswerData.value.length > 0) {
+					fillBlankAnswers.value = [...pendingAnswerData.value];
+				} else {
+					fillBlankAnswers.value = [''];
+				}
 				answerInput.value = pendingAnswerData.value.join(',') || '';
 				pendingAnswerData.value = []; // 清空待回显数据
-				console.log('填空题答案已设置:', answerInput.value);
+				console.log('填空题答案已设置:', fillBlankAnswers.value);
+				return;
+			}
+
+			// 简答题不需要等待选项，直接设置答案
+			if (formState.value.type === QuestionType.SHORT_ANSWER) {
+				if (pendingAnswerData.value.length > 0) {
+					const answer = pendingAnswerData.value[0];
+					// 判断是文本还是图片URL
+					if (isImageUrl(answer)) {
+						setShortAnswerImage(answer);
+					} else {
+						setShortAnswerText(answer || '');
+					}
+				} else {
+					clearShortAnswer();
+				}
+				answerInput.value = pendingAnswerData.value.join(',') || '';
+				pendingAnswerData.value = []; // 清空待回显数据
+				console.log('简答题答案已设置:', { text: shortAnswerText.value, image: shortAnswerImageList.value });
 				return;
 			}
 
@@ -487,7 +675,7 @@ const fetchQuestionDetail = async () => {
 			console.log('待回显答案数据:', pendingAnswerData.value);
 
 			// 根据题型设置答案显示
-			if (formState.value.type === 2) {
+			if (formState.value.type === QuestionType.MULTIPLE_CHOICE) {
 				// 多选题：使用数组
 				// 确保答案值在选项标签范围内，并转换为大写
 				const validAnswers = pendingAnswerData.value
@@ -516,7 +704,7 @@ const fetchQuestionDetail = async () => {
 		};
 
 		// 填空题直接设置答案，不需要等待选项渲染
-		if (formState.value.type === 4) {
+		if (formState.value.type === QuestionType.FILL_BLANK) {
 			setAnswerValue();
 		} else {
 			// 其他题型需要等待选项渲染完成
@@ -533,11 +721,11 @@ const fetchQuestionDetail = async () => {
 	}
 };
 
-const handleSubjectChange = async (subjectId: number) => {
+const handleCourseChange = async (courseId: number) => {
 	selectedChapterId.value = undefined;
 	formState.value.chapter_id = undefined;
-	if (subjectId) {
-		await fetchChapters(subjectId);
+	if (courseId) {
+		await fetchChapters(courseId);
 	}
 };
 
@@ -556,12 +744,33 @@ const handleAnswerChange = (e: any) => {
 	}
 
 	// 将字符串转换为数组
-	if (formState.value.type === 4) {
-		// 填空题：答案可以是任意文本
-		formState.value.answer = value ? [value] : [];
+	if (formState.value.type === QuestionType.FILL_BLANK) {
+		// 填空题：使用答案数组（过滤空值）
+		formState.value.answer = fillBlankAnswers.value.filter((ans) => ans && ans.trim() !== '');
 	} else {
 		// 单选题、判断题：单个答案
 		formState.value.answer = value ? [value] : [];
+	}
+};
+
+// 填空题答案变化处理
+const handleFillBlankAnswerChange = () => {
+	// 过滤空值后更新答案
+	formState.value.answer = fillBlankAnswers.value.filter((ans) => ans && ans.trim() !== '');
+	// 同步到 answerInput（用于显示）
+	answerInput.value = formState.value.answer.join(',');
+};
+
+// 添加填空题答案
+const addFillBlankAnswer = () => {
+	fillBlankAnswers.value.push('');
+};
+
+// 删除填空题答案
+const removeFillBlankAnswer = (index: number) => {
+	if (fillBlankAnswers.value.length > 1) {
+		fillBlankAnswers.value.splice(index, 1);
+		handleFillBlankAnswerChange();
 	}
 };
 
@@ -574,6 +783,230 @@ const handleAnswerArrayChange = (values: string[]) => {
 };
 
 // 获取题型名称
+// ==================== 简答题答案处理辅助函数 ====================
+
+/**
+ * 判断字符串是否为图片URL
+ */
+const isImageUrl = (url: string): boolean => {
+	if (!url) return false;
+	return url.startsWith('http://') || url.startsWith('https://');
+};
+
+/**
+ * 从上传响应中提取图片URL
+ */
+const getImageUrlFromResponse = (response: { url?: string; imageUrl?: string }): string | null => {
+	return response.url || response.imageUrl || null;
+};
+
+/**
+ * 创建上传文件列表项
+ */
+const createUploadFileItem = (file: any, url: string) => {
+	return {
+		uid: file.uid || Date.now().toString(),
+		name: file.name || 'answer-image.jpg',
+		status: 'done' as const,
+		url,
+	};
+};
+
+/**
+ * 设置简答题图片答案
+ */
+const setShortAnswerImage = (imageUrl: string, file?: any) => {
+	shortAnswerImageList.value = [createUploadFileItem(file || {}, imageUrl)];
+	formState.value.answer = [imageUrl];
+	shortAnswerText.value = ''; // 清空文本答案
+};
+
+/**
+ * 设置简答题文本答案
+ */
+const setShortAnswerText = (text: string) => {
+	shortAnswerText.value = text;
+	formState.value.answer = text ? [text] : [];
+	shortAnswerImageList.value = []; // 清空图片答案
+};
+
+/**
+ * 清空简答题答案
+ */
+const clearShortAnswer = () => {
+	shortAnswerText.value = '';
+	shortAnswerImageList.value = [];
+	formState.value.answer = [];
+};
+
+/**
+ * 检查是否有简答题答案（文本或图片）
+ */
+const hasShortAnswer = (): boolean => {
+	return !!shortAnswerText.value || shortAnswerImageList.value.length > 0;
+};
+
+/**
+ * 简答题文本答案变化处理
+ */
+const handleShortAnswerTextChange = () => {
+	if (formState.value.type === QuestionType.SHORT_ANSWER) {
+		setShortAnswerText(shortAnswerText.value);
+	}
+};
+
+// 图片上传前处理
+const beforeUpload = (file: any) => {
+	const isImage = file.type.startsWith('image/');
+	if (!isImage) {
+		message.error('只能上传图片文件！');
+		return false;
+	}
+	return false; // 阻止自动上传，使用自定义上传
+};
+
+/**
+ * 简答题图片上传处理
+ */
+const handleImageUpload = async (options: any) => {
+	const { file, onSuccess, onError } = options;
+	const formData = new FormData();
+	formData.append('file', file);
+
+	try {
+		const response = await uploadImage(file);
+		const imageUrl = getImageUrlFromResponse(response);
+
+		if (imageUrl) {
+			setShortAnswerImage(imageUrl, file);
+			onSuccess?.('ok');
+			message.success('图片上传成功');
+		} else {
+			throw new Error('上传失败：未返回图片URL');
+		}
+	} catch (error: any) {
+		console.error('图片上传失败:', error);
+		message.error(error?.message || '图片上传失败');
+		clearShortAnswer();
+		onError?.(error);
+	}
+};
+
+// 预览图片
+const handlePreview = (file: any) => {
+	// 可以在这里实现图片预览功能
+	window.open(file.url || file.thumbUrl);
+};
+
+/**
+ * 删除简答题图片
+ */
+const handleRemove = () => {
+	clearShortAnswer();
+};
+
+/** 转义 HTML 防止 XSS，用于插入 OCR 文本 */
+function escapeHtml(s: string): string {
+	const div = document.createElement('div');
+	div.textContent = s;
+	return div.innerHTML;
+}
+
+/** 从 data URL 取出纯 base64 */
+function dataUrlToBase64(dataUrl: string): string {
+	if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
+	const comma = dataUrl.indexOf(',');
+	return comma !== -1 ? dataUrl.slice(comma + 1) : '';
+}
+
+/** OCR 区域：粘贴图片 */
+const ocrPasteAreaRef = ref<HTMLElement | null>(null);
+function focusOcrPasteArea() {
+	ocrPasteAreaRef.value?.focus();
+}
+function handleOcrZonePaste(e: ClipboardEvent) {
+	const items = e.clipboardData?.items;
+	if (!items) return;
+	for (let i = 0; i < items.length; i++) {
+		if (items[i].type.indexOf('image') !== -1) {
+			e.preventDefault();
+			const file = items[i].getAsFile();
+			if (!file) return;
+			const reader = new FileReader();
+			reader.onload = () => {
+				const dataUrl = reader.result as string;
+				ocrZoneDataUrl.value = dataUrl;
+			};
+			reader.readAsDataURL(file);
+			break;
+		}
+	}
+}
+
+/** OCR 区域：选择图片上传（before-upload 中转为 base64 并展示，阻止默认上传） */
+function handleOcrZoneUpload(file: File): boolean {
+	const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+	if (!allowed.includes(file.type)) {
+		message.warning('仅支持 jpg、png、gif、webp');
+		return false;
+	}
+	const reader = new FileReader();
+	reader.onload = () => {
+		ocrZoneDataUrl.value = reader.result as string;
+	};
+	reader.readAsDataURL(file);
+	return false; // 阻止 a-upload 默认上传
+}
+
+/** 开始识别并将结果插入到所选位置（题干/解析/选项） */
+async function runOcrZoneAndInsert() {
+	if (!ocrZoneDataUrl.value) {
+		message.warning('请先粘贴或上传图片');
+		return;
+	}
+	const base64 = dataUrlToBase64(ocrZoneDataUrl.value);
+	if (!base64) {
+		message.warning('图片数据无效');
+		return;
+	}
+	ocrZoneLoading.value = true;
+	try {
+		const { text } = await ocrImageBase64(base64);
+		const trimmed = text?.trim() || '';
+		if (!trimmed) {
+			message.info('未识别到文字');
+			return;
+		}
+		const target = ocrInsertTarget.value;
+		const insertBlock = `<p class="ocr-result">${escapeHtml(trimmed)}</p>`;
+		if (target === 'stem') {
+			formState.value.stem = (formState.value.stem || '') + insertBlock;
+			message.success('已插入题干');
+		} else if (target === 'analysis') {
+			formState.value.analysis = (formState.value.analysis || '') + insertBlock;
+			message.success('已插入解析');
+		} else {
+			const idx = Math.min(ocrInsertOptionIndex.value, formState.value.options.length - 1);
+			if (idx < 0) {
+				message.warning('当前没有可选选项');
+				return;
+			}
+			const cur = formState.value.options[idx].text || '';
+			formState.value.options[idx].text = cur ? `${cur}\n${trimmed}` : trimmed;
+			message.success(`已插入选项${getOptionLabel(idx)}`);
+		}
+		clearOcrZone();
+	} catch (err: any) {
+		message.error(err?.message || '识别失败');
+	} finally {
+		ocrZoneLoading.value = false;
+	}
+}
+
+function clearOcrZone() {
+	ocrZoneDataUrl.value = '';
+}
+
 const getTypeName = (type: number): string => {
 	const typeMap: Record<number, string> = {
 		1: '单选题',
@@ -581,14 +1014,15 @@ const getTypeName = (type: number): string => {
 		3: '判断题',
 		4: '填空题',
 		5: '阅读理解',
+		6: '简答题',
 	};
 	return typeMap[type] || '未知';
 };
 
-// 获取科目名称
-const getSubjectName = (subjectId: number): string => {
-	const subject = subjectList.value.find((s: any) => s.id === subjectId);
-	return subject?.name || '';
+// 获取课程名称
+const getCourseName = (courseId: number): string => {
+	const course = courseList.value.find((c: any) => c.id === courseId);
+	return course?.name || '';
 };
 
 // 获取章节名称
@@ -607,6 +1041,21 @@ const getOptionLabel = (index: number): string => {
 	const labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 	return labels[index] || String.fromCharCode(65 + index); // 如果超过J，使用ASCII码继续
 };
+
+// OCR 区域：选项下拉列表与提交按钮文案
+const ocrOptionSelectOptions = computed(() =>
+	formState.value.options.map((_, i) => ({
+		label: `选项${getOptionLabel(i)}`,
+		value: i,
+	})),
+);
+const ocrZoneSubmitLabel = computed(() => {
+	if (ocrInsertTarget.value === 'stem') return '开始识别并插入题干';
+	if (ocrInsertTarget.value === 'analysis') return '开始识别并插入解析';
+	const idx = ocrInsertOptionIndex.value;
+	const label = getOptionLabel(idx);
+	return `开始识别并插入选项${label}`;
+});
 
 // 重新生成所有选项的标签（确保按A、B、C、D顺序）
 const regenerateOptionLabels = () => {
@@ -652,7 +1101,7 @@ const handleSubmit = async () => {
 		await formRef.value?.validate();
 
 		// 手动验证选项
-		if (formState.value.type !== 4) {
+		if (needsOptions(formState.value.type)) {
 			if (!formState.value.options || formState.value.options.length < 2) {
 				message.error('至少需要2个选项');
 				return;
@@ -666,13 +1115,19 @@ const handleSubmit = async () => {
 		}
 
 		// 验证答案
-		if (!formState.value.answer || formState.value.answer.length === 0) {
+		if (formState.value.type === QuestionType.SHORT_ANSWER) {
+			// 简答题：至少要有文本答案或图片答案
+			if (!hasShortAnswer()) {
+				message.error('简答题至少需要文本答案或图片答案');
+				return;
+			}
+		} else if (!formState.value.answer || formState.value.answer.length === 0) {
 			message.error('请选择正确答案');
 			return;
 		}
 
-		// 验证答案是否在选项范围内（非填空题）
-		if (formState.value.type !== 4) {
+		// 验证答案是否在选项范围内
+		if (needsAnswerValidation(formState.value.type)) {
 			const validLabels = formState.value.options.map((opt: any, index: number) => getOptionLabel(index));
 			const invalidAnswers = formState.value.answer.filter((ans: string) => !validLabels.includes(ans));
 			if (invalidAnswers.length > 0) {
@@ -683,16 +1138,16 @@ const handleSubmit = async () => {
 
 		loading.value = true;
 
-		// 构建符合后端 DTO 的数据
+		// 构建符合后端 DTO 的数据（题干/解析中的代理 URL 还原为原始 TCB 地址再保存）
 		const data: any = {
 			chapter_id: formState.value.chapter_id,
 			type: formState.value.type,
-			stem: formState.value.stem,
+			stem: reverseProxyUrlsInHtml(formState.value.stem),
 			answer: formState.value.answer,
 		};
 
-		// 选项：填空题不需要选项
-		if (formState.value.type !== 4) {
+		// 选项：填空题和简答题不需要选项
+		if (needsOptions(formState.value.type)) {
 			// 确保标签是按A、B、C、D顺序生成的
 			regenerateOptionLabels();
 			// 将选项中的 content 字段转换为 text 字段
@@ -704,7 +1159,7 @@ const handleSubmit = async () => {
 
 		// 解析（可选）
 		if (formState.value.analysis) {
-			data.analysis = formState.value.analysis;
+			data.analysis = reverseProxyUrlsInHtml(formState.value.analysis);
 		}
 
 		if (isEdit.value) {
@@ -732,7 +1187,9 @@ watch(
 	() => {
 		if (pendingAnswerData.value.length > 0) {
 			nextTick(() => {
-				if (formState.value.type === 2) {
+				const { type } = formState.value;
+
+				if (type === QuestionType.MULTIPLE_CHOICE) {
 					// 多选题：需要转换为大写
 					const validLabels = formState.value.options.map((opt: any, index: number) => getOptionLabel(index));
 					const validAnswers = pendingAnswerData.value
@@ -743,7 +1200,7 @@ watch(
 						answerInput.value = validAnswers.join(',');
 						pendingAnswerData.value = [];
 					}
-				} else if (formState.value.type === 4) {
+				} else if (type === QuestionType.FILL_BLANK) {
 					// 填空题：不需要转换为大写，保持原样
 					answerInput.value = pendingAnswerData.value.join(',') || '';
 					pendingAnswerData.value = [];
@@ -770,18 +1227,22 @@ watch(
 		formState.value.answer = [];
 		answerInput.value = '';
 		answerArray.value = [];
+		fillBlankAnswers.value = [''];
 		pendingAnswerData.value = [];
 
-		// 如果是填空题，不需要选项
-		if (newType === 4) {
-			// 填空题不需要选项
-		} else if (newType === 3) {
+		// 如果是填空题或简答题，不需要选项
+		if (!needsOptions(newType)) {
+			if (newType === QuestionType.SHORT_ANSWER) {
+				// 简答题：重置答案
+				clearShortAnswer();
+			}
+		} else if (newType === QuestionType.JUDGE) {
 			// 判断题：固定两个选项（正确/错误）
 			formState.value.options = [
 				{ label: 'A', text: '正确' },
 				{ label: 'B', text: '错误' },
 			];
-		} else if (newType === 1 || newType === 2) {
+		} else if (newType === QuestionType.SINGLE_CHOICE || newType === QuestionType.MULTIPLE_CHOICE) {
 			// 单选题、多选题：确保至少有两个选项
 			if (formState.value.options.length < 2) {
 				formState.value.options = [
@@ -794,7 +1255,7 @@ watch(
 );
 
 onMounted(async () => {
-	await fetchSubjects();
+	await fetchCourses();
 	// 初始化选项
 	initOptions();
 	if (isEdit.value) {
@@ -1063,11 +1524,103 @@ onMounted(async () => {
 		width: 100%;
 	}
 
+	.ocr-zone-form-item {
+		margin-bottom: 20px;
+	}
+
+	.ocr-zone {
+		border: 1px dashed #d9d9d9;
+		border-radius: 8px;
+		padding: 16px;
+		background: #fafafa;
+
+		.ocr-zone-tip {
+			font-size: 12px;
+			color: #8c8c8c;
+			margin-bottom: 12px;
+		}
+
+		.ocr-zone-insert-row {
+			display: flex;
+			align-items: center;
+			flex-wrap: wrap;
+			gap: 8px;
+			margin-bottom: 12px;
+
+			.ocr-zone-insert-label {
+				font-size: 13px;
+				color: #333;
+			}
+
+			.ocr-zone-insert-radio {
+				margin-right: 8px;
+			}
+
+			.ocr-zone-option-select {
+				width: 100px;
+			}
+		}
+
+		.ocr-zone-actions {
+			display: flex;
+			gap: 16px;
+			align-items: flex-start;
+			flex-wrap: wrap;
+		}
+
+		.ocr-paste-area {
+			width: 200px;
+			height: 140px;
+			border: 1px dashed #d9d9d9;
+			border-radius: 6px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			background: #fff;
+			cursor: pointer;
+			overflow: hidden;
+
+			.ocr-paste-placeholder {
+				font-size: 12px;
+				color: #8c8c8c;
+				text-align: center;
+				padding: 8px;
+			}
+
+			.ocr-preview-img {
+				max-width: 100%;
+				max-height: 100%;
+				object-fit: contain;
+			}
+		}
+
+		.ocr-upload-area {
+			display: flex;
+			align-items: center;
+		}
+
+		.ocr-zone-btns {
+			margin-top: 12px;
+			display: flex;
+			gap: 8px;
+		}
+	}
+
 	.editor-wrapper {
 		width: 100%;
 
-		.editor-tip {
+		.editor-tip-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 12px;
 			margin-top: 8px;
+			flex-wrap: wrap;
+		}
+
+		.editor-tip {
+			flex: 1;
+			min-width: 0;
 			font-size: 12px;
 			color: #8c8c8c;
 			display: flex;
@@ -1079,10 +1632,54 @@ onMounted(async () => {
 				font-size: 14px;
 			}
 		}
+
+		.stem-ocr-btn {
+			flex-shrink: 0;
+		}
 	}
 
 	.ai-analysis-input {
 		background: #f5f5f5;
+	}
+
+	.fill-blank-answers {
+		width: 100%;
+
+		.fill-blank-item {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			margin-bottom: 12px;
+
+			.answer-input {
+				flex: 1;
+			}
+
+			.remove-btn {
+				flex-shrink: 0;
+			}
+		}
+
+		.add-answer-btn {
+			margin-top: 8px;
+		}
+	}
+
+	.short-answer-answers {
+		width: 100%;
+
+		.answer-textarea {
+			width: 100%;
+		}
+
+		.image-answer-upload {
+			margin-top: 16px;
+		}
+	}
+
+	:deep(.ant-upload-select-picture-card) {
+		width: 128px;
+		height: 128px;
 	}
 
 	.footer-toolbar {

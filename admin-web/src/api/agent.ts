@@ -5,9 +5,29 @@ export function getActivationCodeList(params?: any) {
   return request.get('/admin/codes', { params })
 }
 
+// 获取激活码详情
+export function getActivationCodeDetail(id: number) {
+  return request.get(`/admin/codes/${id}`)
+}
+
+// 获取激活码统计
+export function getActivationCodeStatistics() {
+  return request.get('/admin/codes/statistics')
+}
+
 // 生成激活码批次
 export function generateActivationCodes(data: any) {
   return request.post('/admin/codes/generate', data)
+}
+
+// 删除激活码
+export function deleteActivationCode(id: number) {
+  return request.delete(`/admin/codes/${id}`)
+}
+
+// 禁用已激活激活码，并撤销对应课程权限
+export function invalidateActivationCode(id: number) {
+  return request.patch(`/admin/codes/${id}/invalidate`)
 }
 
 // 购买激活码（代理商）- 如果后端有提供此接口
@@ -27,4 +47,3 @@ export function exportActivationCodes(params?: any) {
 export function getBalanceLog(params?: any) {
   return request.get('/admin/balance-log', { params })
 }
-

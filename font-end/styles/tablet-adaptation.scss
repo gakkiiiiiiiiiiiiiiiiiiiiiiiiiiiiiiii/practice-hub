@@ -1,0 +1,173 @@
+@import './design-system.scss';
+
+// 仅 iPad 手机框 / 窄逻辑宽度：用 px 放大，避免 rpx 在窄屏下过小。
+// 宽屏平板（>=768）不覆盖 rpx，否则会反而比原来更小。
+@mixin pad-compact-page($selector) {
+	#{$selector}.is-pad-compact {
+		@content;
+	}
+}
+
+@include pad-compact-page('.index-page') {
+	font-size: 18px;
+
+	.app-title {
+		font-size: 28px;
+		line-height: 1.25;
+	}
+
+	.quick-action-title {
+		font-size: 18px;
+	}
+
+	.quick-action-icon {
+		width: 38px;
+		height: 38px;
+	}
+
+	.quote-text,
+	.search-placeholder {
+		font-size: 17px;
+		line-height: 1.55;
+	}
+
+	.status-text {
+		font-size: 16px;
+	}
+
+	.section-title {
+		font-size: 22px;
+	}
+
+	.section-more {
+		font-size: 16px;
+	}
+
+	.sub-category-name {
+		font-size: 20px;
+		line-height: 1.35;
+	}
+
+	.sub-category-count {
+		font-size: 16px;
+	}
+
+	.loading-text,
+	.empty-text,
+	.close-text {
+		font-size: 17px;
+	}
+
+	.search-input {
+		font-size: 18px;
+	}
+
+	.result-course-name,
+	.major-course-name {
+		font-size: 19px;
+	}
+
+	.result-course-meta,
+	.major-course-category {
+		font-size: 16px;
+	}
+
+	.sub-category-grid,
+	.public-course-grid {
+		gap: 16px;
+	}
+}
+
+@include pad-compact-page('.user-page') {
+	font-size: 18px;
+
+	.user-page-title {
+		font-size: 22px;
+		margin-bottom: 12px;
+	}
+
+	.user-name {
+		font-size: 26px;
+	}
+
+	.login-text {
+		font-size: 19px;
+	}
+
+	.status-text,
+	.menu-text {
+		font-size: 18px;
+	}
+
+	.member-tag-text,
+	.admin-badge,
+	.bank-admin-badge,
+	.trial-badge {
+		font-size: 14px;
+	}
+}
+
+@include pad-compact-page('.category-page') {
+	font-size: 18px;
+
+	.header-title {
+		font-size: 22px;
+		line-height: 1.2;
+	}
+
+	.primary-list {
+		width: 140px;
+	}
+
+	.primary-item {
+		min-height: 62px;
+	}
+
+	.primary-text {
+		font-size: 18px;
+	}
+
+	.secondary-content {
+		padding: 16px;
+	}
+
+	.secondary-grid {
+		gap: 16px;
+	}
+
+	.secondary-item {
+		min-height: 60px;
+		padding: 14px 16px;
+		border-radius: 10px;
+	}
+
+	.secondary-text {
+		font-size: 18px;
+	}
+
+	.loading-text,
+	.empty-text {
+		font-size: 17px;
+	}
+}
+
+@include pad-compact-page('.bank-page') {
+	font-size: 18px;
+
+	.selector-text {
+		font-size: 24px;
+		line-height: 1.25;
+	}
+
+	.switch-course-btn {
+		height: 42px;
+		line-height: 42px;
+		padding: 0 20px;
+		font-size: 17px;
+	}
+
+	.loading-text,
+	.empty-text {
+		font-size: 17px;
+	}
+}

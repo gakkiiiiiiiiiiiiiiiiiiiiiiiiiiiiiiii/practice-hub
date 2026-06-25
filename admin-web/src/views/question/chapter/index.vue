@@ -1,201 +1,319 @@
 <template>
-  <div class="chapter-management">
-    <a-card>
-      <template #title>章节管理</template>
-      <template #extra>
-        <a-space>
-          <a-select
-            v-model:value="selectedSubjectId"
-            placeholder="选择科目"
-            style="width: 200px"
-            @change="handleSubjectChange"
-          >
-            <a-select-option
-              v-for="subject in subjectList"
-              :key="subject.id"
-              :value="subject.id"
-            >
-              {{ subject.name }}
-            </a-select-option>
-          </a-select>
-          <a-button @click="fetchSubjects" title="刷新科目列表">
-            <template #icon><reload-outlined /></template>
-          </a-button>
-          <a-button
-            type="primary"
-            :disabled="!selectedSubjectId"
-            @click="handleAdd"
-          >
-            <template #icon><plus-outlined /></template>
-            新增章节
-          </a-button>
-        </a-space>
-      </template>
+	<div class="chapter-management">
+		<a-card>
+			<template #extra>
+				<a-space>
+					<a-select
+						v-model:value="selectedCourseId"
+						placeholder="选择课程"
+						style="width: 200px"
+						@change="handleCourseChange"
+					>
+						<a-select-option v-for="course in courseList" :key="course.id" :value="course.id">
+							{{ course.name }}
+						</a-select-option>
+					</a-select>
+					<a-button @click="fetchCourses" title="刷新课程列表">
+						<template #icon><reload-outlined /></template>
+					</a-button>
+					<a-button
+						type="primary"
+						danger
+						:disabled="selectedRowKeys.length === 0"
+						@click="showBatchDeleteModal"
+					>
+						<template #icon><delete-outlined /></template>
+						批量删除 ({{ selectedRowKeys.length || 0 }})
+					</a-button>
+					<a-button
+						:disabled="selectedRowKeys.length === 0"
+						@click="handleBatchEnable"
+					>
+						<template #icon><check-outlined /></template>
+						批量启用 ({{ selectedRowKeys.length || 0 }})
+					</a-button>
+					<a-button
+						:disabled="selectedRowKeys.length === 0"
+						@click="handleBatchDisable"
+					>
+						<template #icon><close-outlined /></template>
+						批量禁用 ({{ selectedRowKeys.length || 0 }})
+					</a-button>
+					<a-button type="primary" :disabled="!selectedCourseId" @click="handleAdd">
+						<template #icon><plus-outlined /></template>
+						新增章节
+					</a-button>
+				</a-space>
+			</template>
 
-      <a-table
-        :columns="columns"
-        :data-source="dataSource"
-        :loading="loading"
-        :pagination="pagination"
-        @change="handleTableChange"
-        row-key="id"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'is_free'">
-            <a-tag :color="record.is_free === 1 ? 'green' : 'default'">
-              {{ record.is_free === 1 ? '试读' : 'VIP' }}
-            </a-tag>
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <a-space>
-              <a-button type="link" size="small" @click="handleEdit(record)">
-                编辑
-              </a-button>
-              <a-popconfirm
-                title="确定要删除这个章节吗？"
-                @confirm="handleDelete(record)"
-              >
-                <a-button type="link" danger size="small">删除</a-button>
-              </a-popconfirm>
-            </a-space>
-          </template>
-        </template>
-      </a-table>
-    </a-card>
+			<div class="table-toolbar">
+				<TableColumnSetting :items="settingItems" @update:items="updatePreference" @reset="resetColumns" />
+			</div>
 
-    <chapter-modal
-      v-model:open="modalVisible"
-      :record="currentRecord"
-      :subject-id="selectedSubjectId"
-      @success="handleRefresh"
-    />
-  </div>
+			<a-table
+				:columns="displayColumns"
+				:data-source="dataSource"
+				:loading="loading"
+				:pagination="pagination"
+				:row-selection="{ selectedRowKeys, onChange: onSelectChange }"
+				@change="handleTableChange"
+				row-key="id"
+			>
+				<template #bodyCell="{ column, record }">
+					<template v-if="column.key === 'is_free'">
+						<a-tag :color="record.is_free === 1 ? 'green' : 'default'">
+							{{ record.is_free === 1 ? '是' : '否' }}
+						</a-tag>
+					</template>
+					<template v-else-if="column.key === 'status'">
+						<a-tag :color="record.status === 1 ? 'green' : 'red'">
+							{{ record.status === 1 ? '启用' : '禁用' }}
+						</a-tag>
+					</template>
+					<template v-else-if="column.key === 'action'">
+						<a-space>
+							<a-button type="link" size="small" @click="handleEdit(record)"> 编辑 </a-button>
+							<a-popconfirm title="确定要删除这个章节吗？" @confirm="handleDelete(record)">
+								<a-button type="link" danger size="small">删除</a-button>
+							</a-popconfirm>
+						</a-space>
+					</template>
+				</template>
+			</a-table>
+		</a-card>
+
+		<chapter-modal
+			v-model:open="modalVisible"
+			:record="currentRecord"
+			:course-id="selectedCourseId"
+			@success="handleRefresh"
+		/>
+
+		<!-- 批量删除确认弹窗 -->
+		<a-modal
+			v-model:open="batchDeleteModalVisible"
+			title="批量删除确认"
+			:confirm-loading="batchDeleteLoading"
+			@ok="confirmBatchDelete"
+			@cancel="cancelBatchDelete"
+		>
+			<p>确定要删除选中的 {{ selectedRowKeys.length }} 个章节吗？</p>
+			<p style="color: #ff4d4f; font-size: 12px; margin-top: 8px">此操作不可恢复，请谨慎操作！</p>
+		</a-modal>
+	</div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onActivated } from 'vue'
-import { message } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import { getChapterList, deleteChapter, getSubjectList } from '@/api/question'
-import ChapterModal from './components/ChapterModal.vue'
+import { ref, onMounted, onActivated } from 'vue';
+import { message } from 'ant-design-vue';
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons-vue';
+import { getChapterList, deleteChapter, batchDeleteChapters, batchUpdateChapterStatus } from '@/api/question';
+import { getCourseList } from '@/api/course';
+import ChapterModal from './components/ChapterModal.vue';
+import TableColumnSetting from '@/components/TableColumnSetting/index.vue';
+import { useTableColumns } from '@/composables/useTableColumns';
 
-const loading = ref(false)
-const dataSource = ref([])
-const subjectList = ref([])
-const selectedSubjectId = ref<number | null>(null)
-const modalVisible = ref(false)
-const currentRecord = ref(null)
+const loading = ref(false);
+const dataSource = ref([]);
+const courseList = ref([]);
+const selectedCourseId = ref<number | null>(null);
+const modalVisible = ref(false);
+const currentRecord = ref(null);
+const selectedRowKeys = ref<number[]>([]);
+const batchDeleteModalVisible = ref(false);
+const batchDeleteLoading = ref(false);
 
 const pagination = ref({
-  current: 1,
-  pageSize: 10,
-  total: 0,
-})
+	current: 1,
+	pageSize: 10,
+	total: 0,
+});
 
-const columns = [
-  {
-    title: '章节名称',
-    dataIndex: 'name',
-    key: 'name',
-  },
-  {
-    title: '排序',
-    dataIndex: 'sort',
-    key: 'sort',
-    width: 100,
-  },
-  {
-    title: '试读/VIP',
-    key: 'is_free',
-    width: 120,
-  },
-  {
-    title: '操作',
-    key: 'action',
-    width: 150,
-  },
-]
+const baseColumns = [
+	{
+		title: '章节名称',
+		dataIndex: 'name',
+		key: 'name',
+	},
+	{
+		title: '排序',
+		dataIndex: 'sort',
+		key: 'sort',
+		width: 100,
+	},
+	{
+		title: '是否试读',
+		key: 'is_free',
+		width: 100,
+	},
+	{
+		title: '状态',
+		key: 'status',
+		width: 80,
+	},
+	{
+		title: '操作',
+		key: 'action',
+		width: 150,
+	},
+];
 
-const fetchSubjects = async () => {
-  try {
-    const res = await getSubjectList()
-    // 后端返回的是数组，不是分页对象
-    subjectList.value = Array.isArray(res.data) ? res.data : res.data.list || []
-  } catch (error) {
-    message.error('获取科目列表失败')
-  }
-}
+const { displayColumns, settingItems, resetColumns, updatePreference } = useTableColumns(
+	'question-chapter-list',
+	baseColumns,
+	{ lockRightKeys: ['action'] },
+);
+
+const fetchCourses = async () => {
+	try {
+		const res = await getCourseList();
+		// 后端返回的是数组，不是分页对象
+		courseList.value = Array.isArray(res.data) ? res.data : res.data.list || [];
+	} catch (error) {
+		message.error('获取课程列表失败');
+	}
+};
 
 const fetchData = async () => {
-  if (!selectedSubjectId.value) {
-    dataSource.value = []
-    return
-  }
+	if (!selectedCourseId.value) {
+		dataSource.value = [];
+		return;
+	}
 
-  loading.value = true
-  try {
-    const res = await getChapterList({
-      subjectId: selectedSubjectId.value,
-    })
-    // 后端返回的是数组，不是分页对象
-    const chapters = Array.isArray(res.data) ? res.data : res.data.list || []
-    dataSource.value = chapters
-    pagination.value.total = chapters.length
-  } catch (error) {
-    message.error('获取章节列表失败')
-  } finally {
-    loading.value = false
-  }
-}
+	loading.value = true;
+	try {
+		const res = await getChapterList({
+			courseId: selectedCourseId.value,
+		});
+		// 后端返回的是数组，不是分页对象
+		const chapters = Array.isArray(res.data) ? res.data : res.data.list || [];
+		dataSource.value = chapters;
+		pagination.value.total = chapters.length;
+	} catch (error) {
+		message.error('获取章节列表失败');
+	} finally {
+		loading.value = false;
+	}
+};
 
-const handleSubjectChange = () => {
-  pagination.value.current = 1
-  fetchData()
-}
+const handleCourseChange = () => {
+	pagination.value.current = 1;
+	fetchData();
+};
 
 const handleTableChange = (pag: any) => {
-  pagination.value.current = pag.current
-  pagination.value.pageSize = pag.pageSize
-  fetchData()
-}
+	pagination.value.current = pag.current;
+	pagination.value.pageSize = pag.pageSize;
+	fetchData();
+};
 
 const handleAdd = () => {
-  currentRecord.value = null
-  modalVisible.value = true
-}
+	currentRecord.value = null;
+	modalVisible.value = true;
+};
 
 const handleEdit = (record: any) => {
-  currentRecord.value = record
-  modalVisible.value = true
-}
+	currentRecord.value = record;
+	modalVisible.value = true;
+};
 
 const handleDelete = async (record: any) => {
-  try {
-    await deleteChapter(record.id)
-    message.success('删除成功')
-    fetchData()
-  } catch (error) {
-    message.error('删除失败')
-  }
-}
+	try {
+		await deleteChapter(record.id);
+		message.success('删除成功');
+		fetchData();
+	} catch (error) {
+		message.error('删除失败');
+	}
+};
 
 const handleRefresh = () => {
-  fetchData()
-}
+	fetchData();
+};
+
+// 选择变化
+const onSelectChange = (keys: number[]) => {
+	selectedRowKeys.value = keys;
+};
+
+// 显示批量删除确认弹窗
+const showBatchDeleteModal = () => {
+	if (selectedRowKeys.value.length === 0) {
+		message.warning('请先选择要删除的章节');
+		return;
+	}
+	batchDeleteModalVisible.value = true;
+};
+
+// 取消批量删除
+const cancelBatchDelete = () => {
+	batchDeleteModalVisible.value = false;
+};
+
+// 确认批量删除
+const confirmBatchDelete = async () => {
+	if (selectedRowKeys.value.length === 0) return;
+
+	batchDeleteLoading.value = true;
+	try {
+		await batchDeleteChapters(selectedRowKeys.value);
+		message.success(`成功删除 ${selectedRowKeys.value.length} 个章节`);
+		batchDeleteModalVisible.value = false;
+		selectedRowKeys.value = [];
+		fetchData();
+	} catch (error: any) {
+		message.error(error?.msg || error?.message || '批量删除失败');
+	} finally {
+		batchDeleteLoading.value = false;
+	}
+};
+
+// 批量启用
+const handleBatchEnable = async () => {
+	if (selectedRowKeys.value.length === 0) {
+		message.warning('请先选择要启用的章节');
+		return;
+	}
+
+	try {
+		await batchUpdateChapterStatus(selectedRowKeys.value, 1);
+		message.success(`成功启用 ${selectedRowKeys.value.length} 个章节`);
+		selectedRowKeys.value = [];
+		fetchData();
+	} catch (error: any) {
+		message.error(error?.msg || error?.message || '批量启用失败');
+	}
+};
+
+// 批量禁用
+const handleBatchDisable = async () => {
+	if (selectedRowKeys.value.length === 0) {
+		message.warning('请先选择要禁用的章节');
+		return;
+	}
+
+	try {
+		await batchUpdateChapterStatus(selectedRowKeys.value, 0);
+		message.success(`成功禁用 ${selectedRowKeys.value.length} 个章节`);
+		selectedRowKeys.value = [];
+		fetchData();
+	} catch (error: any) {
+		message.error(error?.msg || error?.message || '批量禁用失败');
+	}
+};
 
 onMounted(() => {
-  fetchSubjects()
-})
+	fetchCourses();
+});
 
-// 当页面激活时（从其他页面返回时）刷新科目列表
+// 当页面激活时（从其他页面返回时）刷新课程列表
 onActivated(() => {
-  fetchSubjects()
-})
+	fetchCourses();
+});
 </script>
 
 <style scoped lang="scss">
 .chapter-management {
-  // 样式
+	// 样式
 }
 </style>
-

@@ -22,6 +22,7 @@ import { ref, shallowRef, onBeforeUnmount, watch } from 'vue';
 import '@wangeditor/editor/dist/css/style.css';
 import { Editor, Toolbar } from '@wangeditor/editor-for-vue';
 import type { IDomEditor, IEditorConfig, IToolbarConfig } from '@wangeditor/editor';
+import { uploadImage } from '@/api/upload';
 
 const props = defineProps<{
 	modelValue: string;
@@ -47,9 +48,32 @@ const editorConfig: Partial<IEditorConfig> = {
 	placeholder: props.placeholder || '请输入内容...',
 	MENU_CONF: {
 		uploadImage: {
-			// 图片上传配置（可根据实际需求配置）
-			server: '/api/upload/image',
-			fieldName: 'file',
+			// 自定义上传处理
+			async customUpload(file: File, insertFn: (url: string, alt: string, href: string) => void) {
+				try {
+					// 验证文件类型
+					const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+					if (!allowedTypes.includes(file.type)) {
+						throw new Error('不支持的图片格式，仅支持 jpg、png、gif、webp');
+					}
+
+					// 上传图片
+					const response = await uploadImage(file);
+					const url = response.url || response.imageUrl;
+
+					if (!url) {
+						throw new Error('上传失败：未返回图片URL');
+					}
+
+					// 插入图片到编辑器
+					insertFn(url, file.name, url);
+				} catch (error: any) {
+					console.error('图片上传失败:', error);
+					// 显示错误提示
+					const errorMessage = error?.response?.data?.msg || error?.message || '图片上传失败，请重试';
+					throw new Error(errorMessage);
+				}
+			},
 		},
 	},
 };

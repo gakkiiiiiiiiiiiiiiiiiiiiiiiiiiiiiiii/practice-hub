@@ -21,7 +21,14 @@ import { SystemService } from '../system/system.service';
 import { CourseService } from '../course/course.service';
 import { CourseFileService, CourseFileInput } from '../course/course-file.service';
 import { AdminRole } from '../../database/entities/sys-user.entity';
-import { VirtualPayGoodsService } from '../order/virtual-pay-goods.service';
+import { queryWithRetry } from '../../common/utils/database-retry';
+import { assertIntegerYuanPrice, ceilIntegerYuanPrice } from '../../common/utils/price.util';
+import {
+  buildSimilarCourseGroups,
+  collectSimilarCourseIds,
+  CourseSimilarityOptions,
+  SimilarCourseGroupResult,
+} from './course-name-similarity.util';
 
 class PreviewCacheTaskInterruptedError extends Error {
   constructor() {
@@ -67,7 +74,6 @@ export class AdminCourseService {
     private systemService: SystemService,
     private courseService: CourseService,
     private courseFileService: CourseFileService,
-    private virtualPayGoodsService: VirtualPayGoodsService,
   ) {}
 
   /**
@@ -75,14 +81,12 @@ export class AdminCourseService {
    */
   async saveCourse(dto: CreateCourseDto | UpdateCourseDto, id?: number, actorRole?: AdminRole | string) {
     await this.applyDefaultIntroduction(dto, Boolean(id));
+    this.validateCoursePriceFields(dto);
     if (id) {
       const course = await this.courseRepository.findOne({ where: { id } });
       if (!course) {
         throw new NotFoundException('课程不存在');
       }
-      const previousPrice = this.roundCoursePrice(Number(course.price || 0));
-      const previousAgentPrice = this.roundCoursePrice(Number(course.agent_price || 0));
-      const previousIsFree = Number(course.is_free || 0);
       if (dto.is_free === 0 && dto.validity_days === undefined && course.validity_days == null) {
         dto.validity_days = 365;
       }
@@ -94,17 +98,7 @@ export class AdminCourseService {
       const saved = await this.courseRepository.save(course);
       await this.ensureCourseFilesFromLegacyFields(saved);
       await this.courseFileService.syncPrimaryMirror(saved.id);
-      const priceRelatedChanged = this.isCoursePriceRelatedChanged(saved, {
-        price: previousPrice,
-        agent_price: previousAgentPrice,
-        is_free: previousIsFree,
-      });
-      let virtualPayGoodsSync;
-      if (this.shouldSyncVirtualPayGoods(saved) && priceRelatedChanged) {
-        this.virtualPayGoodsService.scheduleSyncCourseGoods(saved, { force: true });
-        virtualPayGoodsSync = this.virtualPayGoodsService.buildAdminPriceSyncNotice();
-      }
-      return this.buildCourseSaveResult(saved, virtualPayGoodsSync);
+      return saved;
     } else {
       await this.applyCreateCourseDefaults(dto as CreateCourseDto);
       if (dto.sort === undefined || dto.sort === null) {
@@ -117,65 +111,8 @@ export class AdminCourseService {
       const saved = await this.courseRepository.save(course);
       await this.ensureCourseFilesFromLegacyFields(saved);
       await this.courseFileService.syncPrimaryMirror(saved.id);
-      let virtualPayGoodsSync;
-      if (this.shouldSyncVirtualPayGoods(saved)) {
-        this.virtualPayGoodsService.scheduleSyncCourseGoods(saved, { force: true });
-        virtualPayGoodsSync = this.virtualPayGoodsService.buildAdminPriceSyncNotice();
-      }
-      return this.buildCourseSaveResult(saved, virtualPayGoodsSync);
+      return saved;
     }
-  }
-
-  async syncAllCourseVirtualPayGoods() {
-    const courses = await this.courseRepository.find();
-    const targets = courses.filter((course) => this.shouldSyncVirtualPayGoods(course));
-    void this.runVirtualPayGoodsBatchSync(targets);
-    return {
-      total: targets.length,
-      scheduled: true,
-      virtual_pay_goods_sync: this.virtualPayGoodsService.buildAdminPriceSyncNotice(),
-    };
-  }
-
-  private async runVirtualPayGoodsBatchSync(courses: Course[]) {
-    const delayMs = 300;
-    let success = 0;
-    let failed = 0;
-    for (const course of courses) {
-      try {
-        await this.virtualPayGoodsService.syncCourseGoods(course, { force: true });
-        success += 1;
-      } catch (error: any) {
-        failed += 1;
-        this.logger.warn(`课程 ${course.id} 虚拟道具价格同步失败: ${error?.message || error}`);
-      }
-      if (delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-    this.logger.log(`全部课程虚拟道具价格同步完成：成功 ${success}，失败 ${failed}`);
-  }
-
-  private shouldSyncVirtualPayGoods(course: Course) {
-    return course.is_free !== 1 && Number(course.price) > 0;
-  }
-
-  private isCoursePriceRelatedChanged(
-    course: Course,
-    previous: { price: number; agent_price: number; is_free: number },
-  ) {
-    return (
-      this.roundCoursePrice(Number(course.price || 0)) !== previous.price ||
-      this.roundCoursePrice(Number(course.agent_price || 0)) !== previous.agent_price ||
-      Number(course.is_free || 0) !== previous.is_free
-    );
-  }
-
-  private buildCourseSaveResult(course: Course, virtualPayGoodsSync?: Record<string, unknown>) {
-    return {
-      ...course,
-      virtual_pay_goods_sync: virtualPayGoodsSync,
-    };
   }
 
   async getCourseDefaultParams() {
@@ -184,6 +121,19 @@ export class AdminCourseService {
 
   async setCourseDefaultParams(input: Record<string, any>) {
     return this.systemService.setCourseDefaultParams(input);
+  }
+
+  async getCourseSimilarityConfig() {
+    return this.systemService.getCourseSimilarityConfig();
+  }
+
+  async setCourseSimilarityConfig(input: Record<string, any>) {
+    return this.systemService.setCourseSimilarityConfig(input);
+  }
+
+  private async getCourseSimilarityOptions(): Promise<CourseSimilarityOptions> {
+    const config = await this.systemService.getCourseSimilarityConfig();
+    return { threshold: config.threshold };
   }
 
   private async applyCreateCourseDefaults(dto: CreateCourseDto) {
@@ -220,6 +170,9 @@ export class AdminCourseService {
     }
     if (!dto.content_type) {
       dto.content_type = defaults.content_type || 'normal';
+    }
+    if (dto.status === undefined || dto.status === null) {
+      dto.status = defaults.status ?? 0;
     }
   }
 
@@ -276,7 +229,7 @@ export class AdminCourseService {
     const fileUrl = String(course.file_url || '').trim();
     if (!fileUrl) return;
     await this.courseFileService.create(course.id, {
-      display_name: course.file_name || course.name,
+      display_name: this.courseFileService.stripFileExtension(course.file_name) || course.name || '课程文件',
       file_url: fileUrl,
       file_name: course.file_name,
       file_type: (course.file_type || 'pdf').toLowerCase(),
@@ -637,7 +590,7 @@ export class AdminCourseService {
     };
   }
 
-  async fixBlankPreviewCaches() {
+  async fixBlankPreviewCaches(triggerType = 'fix-blank') {
     const runningTask = await this.findRunningPreviewCacheTask();
     if (runningTask) {
       return {
@@ -653,7 +606,7 @@ export class AdminCourseService {
     const task = await this.previewCacheTaskRepository.save(
       this.previewCacheTaskRepository.create({
         task_no: this.createPreviewCacheTaskNo(),
-        trigger_type: 'fix-blank',
+        trigger_type: triggerType,
         status: PreviewCacheTaskStatus.PENDING,
         total_courses: 0,
         message: '正在检测空白预览图课程，请稍候…',
@@ -669,6 +622,190 @@ export class AdminCourseService {
       running: 0,
       alreadyRunning: false,
       detected: [],
+      ...this.formatPreviewCacheTask(task),
+    };
+  }
+
+  /**
+   * 定时巡检：检测空白/缺失/不完整预览缓存，并自动触发修复任务。
+   * 可被 @Cron 或独立脚本调用。
+   */
+  async runScheduledPreviewCacheMaintenance() {
+    const runningTask = await this.findRunningPreviewCacheTask();
+    if (runningTask) {
+      this.logger.log(`预览缓存定时巡检跳过：已有任务运行中 taskId=${runningTask.id}`);
+      return {
+        action: 'skipped',
+        reason: 'task_running',
+        taskId: runningTask.id,
+      };
+    }
+
+    const cooldownHours = Number(process.env.PREVIEW_CACHE_MAINTENANCE_COOLDOWN_HOURS || 2);
+    const cooldownMs = Math.max(0, cooldownHours) * 60 * 60 * 1000;
+    if (cooldownMs > 0) {
+      const recentScheduled = await this.previewCacheTaskRepository.findOne({
+        where: {
+          trigger_type: 'scheduled',
+          status: PreviewCacheTaskStatus.COMPLETED,
+        },
+        order: { finished_at: 'DESC' },
+      });
+      if (recentScheduled?.finished_at) {
+        const elapsed = Date.now() - new Date(recentScheduled.finished_at).getTime();
+        const message = recentScheduled.message || '';
+        if (elapsed < cooldownMs && (message.includes('无需修复') || message.includes('未检测到'))) {
+          this.logger.log('预览缓存定时巡检跳过：最近已完成且无异常');
+          return {
+            action: 'skipped',
+            reason: 'recently_checked_ok',
+            taskId: recentScheduled.id,
+          };
+        }
+      }
+    }
+
+    const healthIssues = await this.courseService.scanPreviewCacheHealth();
+    this.logger.log(`预览缓存定时巡检：发现 ${healthIssues.length} 个问题`);
+
+    if (healthIssues.length > 0) {
+      const blankCourseIds = Array.from(
+        new Set(healthIssues.filter((item) => item.issue === 'blank').map((item) => item.courseId)),
+      );
+      if (blankCourseIds.length > 0) {
+        const result = await this.fixBlankPreviewCaches('scheduled');
+        return {
+          action: 'fix_blank',
+          issueCount: healthIssues.length,
+          courseIds: blankCourseIds,
+          ...result,
+        };
+      }
+
+      const repairCourseIds = Array.from(new Set(healthIssues.map((item) => item.courseId)));
+      const result = await this.startPreviewCacheTaskForCourses(
+        repairCourseIds,
+        false,
+        'scheduled',
+        `定时巡检发现 ${repairCourseIds.length} 个课程预览缓存不完整，开始补全缺失页`,
+      );
+      return {
+        action: 'repair_incomplete',
+        issueCount: healthIssues.length,
+        courseIds: repairCourseIds,
+        issues: healthIssues,
+        ...result,
+      };
+    }
+
+    const failedTask = await this.previewCacheTaskRepository.findOne({
+      where: { status: PreviewCacheTaskStatus.FAILED },
+      order: { finished_at: 'DESC' },
+    });
+    if (failedTask?.finished_at) {
+      const ageMs = Date.now() - new Date(failedTask.finished_at).getTime();
+      const minAgeMs = 60 * 60 * 1000;
+      const maxAgeMs = 7 * 24 * 60 * 60 * 1000;
+      if (ageMs >= minAgeMs && ageMs <= maxAgeMs) {
+        try {
+          const result = await this.warmupFailedPreviewCaches(failedTask.id);
+          this.logger.log(`预览缓存定时巡检：重试失败任务 taskId=${failedTask.id}`);
+          return {
+            action: 'retry_failed',
+            failedTaskId: failedTask.id,
+            ...result,
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`预览缓存定时巡检：重试失败任务跳过 ${message}`);
+        }
+      }
+    }
+
+    const noopTask = await this.previewCacheTaskRepository.save(
+      this.previewCacheTaskRepository.create({
+        task_no: this.createPreviewCacheTaskNo(),
+        trigger_type: 'scheduled',
+        status: PreviewCacheTaskStatus.COMPLETED,
+        message: '定时巡检完成，无需修复',
+        finished_at: new Date(),
+      }),
+    );
+    return {
+      action: 'none',
+      message: '定时巡检完成，无需修复',
+      taskId: noopTask.id,
+    };
+  }
+
+  async getPreviewCacheHealthReport() {
+    const issues = await this.courseService.scanPreviewCacheHealth();
+    const runningTask = await this.findRunningPreviewCacheTask();
+    return {
+      issueCount: issues.length,
+      issues,
+      runningTask: runningTask ? this.formatPreviewCacheTask(runningTask) : null,
+    };
+  }
+
+  private async startPreviewCacheTaskForCourses(
+    courseIds: number[],
+    force: boolean,
+    triggerType: string,
+    message: string,
+  ) {
+    const runningTask = await this.findRunningPreviewCacheTask();
+    if (runningTask) {
+      return {
+        ...this.formatPreviewCacheTask(runningTask),
+        total: runningTask.total_courses,
+        started: 0,
+        running: 1,
+        alreadyRunning: true,
+      };
+    }
+
+    const uniqueIds = Array.from(
+      new Set(courseIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)),
+    );
+    if (uniqueIds.length === 0) {
+      throw new BadRequestException('没有可修复的课程');
+    }
+
+    const courses = await this.courseRepository.find({
+      where: { id: In(uniqueIds) },
+      select: ['id', 'name', 'content_type', 'file_type', 'file_url'],
+      order: { id: 'ASC' },
+    });
+    const targets: Course[] = [];
+    for (const course of courses) {
+      if (await this.isPreviewCacheSupportedFileCourse(course)) {
+        targets.push(course);
+      }
+    }
+    if (targets.length === 0) {
+      throw new BadRequestException('目标课程均不支持图片缓存');
+    }
+
+    const task = await this.previewCacheTaskRepository.save(
+      this.previewCacheTaskRepository.create({
+        task_no: this.createPreviewCacheTaskNo(),
+        trigger_type: triggerType,
+        status: PreviewCacheTaskStatus.PENDING,
+        total_courses: targets.length,
+        message,
+        failed_details: JSON.stringify([]),
+      }),
+    );
+
+    void this.runPreviewCacheTask(task.id, targets, force);
+
+    return {
+      total: targets.length,
+      started: targets.length,
+      running: 0,
+      alreadyRunning: false,
+      selectedCourseIds: targets.map((course) => course.id),
       ...this.formatPreviewCacheTask(task),
     };
   }
@@ -1044,6 +1181,89 @@ export class AdminCourseService {
   }
 
   /**
+   * 下拉选项：仅返回必要字段，避免拉取 introduction 等大字段
+   */
+  async getCourseOptions(filters?: { name?: string; status?: number }) {
+    const queryBuilder = this.courseRepository
+      .createQueryBuilder('course')
+      .select([
+        'course.id',
+        'course.name',
+        'course.status',
+        'course.category',
+        'course.sub_category',
+        'course.price',
+        'course.is_free',
+      ]);
+
+    if (filters?.name?.trim()) {
+      queryBuilder.andWhere('course.name LIKE :name', { name: `%${filters.name.trim()}%` });
+    }
+    if (filters?.status !== undefined && filters?.status !== null && !Number.isNaN(filters.status)) {
+      queryBuilder.andWhere('course.status = :status', { status: filters.status });
+    }
+
+    return queryWithRetry(
+      () =>
+        queryBuilder
+          .orderBy('course.sort', 'ASC')
+          .addOrderBy('course.id', 'ASC')
+          .getMany(),
+      { action: '获取课程选项', logger: this.logger },
+    );
+  }
+
+  /**
+   * 检测同名或名称相近的课程分组
+   */
+  async getSimilarCourseGroups(filters?: {
+    name?: string;
+    subject?: string;
+    category?: string;
+    subCategory?: string;
+    status?: number;
+  }) {
+    const similarityOptions = await this.getCourseSimilarityOptions();
+    const courses = await this.getCourseList({
+      name: filters?.name,
+      subject: filters?.subject,
+      category: filters?.category,
+      subCategory: filters?.subCategory,
+      status: filters?.status,
+    });
+    const groups = buildSimilarCourseGroups(
+      courses.map((course) => ({ id: course.id, name: course.name })),
+      similarityOptions,
+    );
+    const courseMap = new Map(courses.map((course) => [course.id, course]));
+
+    return {
+      similarityThreshold: similarityOptions.threshold,
+      groupCount: groups.length,
+      duplicateCourseCount: collectSimilarCourseIds(groups).length,
+      groups: groups.map((group) => ({
+        ...group,
+        courses: group.courseIds
+          .map((id) => courseMap.get(id))
+          .filter((course): course is Course => Boolean(course)),
+      })),
+    };
+  }
+
+  private buildSimilarCourseMeta(groups: SimilarCourseGroupResult[]) {
+    const meta = new Map<number, { similar_group_id: string; similar_match_type: string }>();
+    groups.forEach((group) => {
+      group.courseIds.forEach((id) => {
+        meta.set(id, {
+          similar_group_id: group.groupId,
+          similar_match_type: group.matchType,
+        });
+      });
+    });
+    return meta;
+  }
+
+  /**
    * 获取课程列表
    */
   async getCourseList(filters?: {
@@ -1052,8 +1272,36 @@ export class AdminCourseService {
     category?: string;
     subCategory?: string;
     status?: number;
+    similarOnly?: boolean;
   }) {
-    const queryBuilder = this.courseRepository.createQueryBuilder('course');
+    const queryBuilder = this.courseRepository.createQueryBuilder('course').select([
+      'course.id',
+      'course.name',
+      'course.subject',
+      'course.category',
+      'course.sub_category',
+      'course.school',
+      'course.major',
+      'course.exam_year',
+      'course.answer_year',
+      'course.cover_img',
+      'course.price',
+      'course.agent_price',
+      'course.is_free',
+      'course.validity_days',
+      'course.student_count',
+      'course.sort',
+      'course.status',
+      'course.content_type',
+      'course.file_name',
+      'course.file_type',
+      'course.file_size',
+      'course.file_page_count',
+      'course.allow_source_file',
+      'course.recommended_course_ids',
+      'course.create_time',
+      'course.update_time',
+    ]);
 
     if (filters?.name?.trim()) {
       queryBuilder.andWhere('course.name LIKE :name', { name: `%${filters.name.trim()}%` });
@@ -1071,10 +1319,47 @@ export class AdminCourseService {
       queryBuilder.andWhere('course.status = :status', { status: filters.status });
     }
 
-    return await queryBuilder
-      .orderBy('course.sort', 'ASC')
-      .addOrderBy('course.id', 'ASC')
-      .getMany();
+    let similarMeta = new Map<number, { similar_group_id: string; similar_match_type: string }>();
+    if (filters?.similarOnly) {
+      const similarityOptions = await this.getCourseSimilarityOptions();
+      const baseCourses = await queryWithRetry(
+        () =>
+          queryBuilder
+            .clone()
+            .orderBy('course.sort', 'ASC')
+            .addOrderBy('course.id', 'ASC')
+            .getMany(),
+        { action: '获取课程列表（相似检测）', logger: this.logger },
+      );
+      const groups = buildSimilarCourseGroups(
+        baseCourses.map((course) => ({ id: course.id, name: course.name })),
+        similarityOptions,
+      );
+      const similarIds = collectSimilarCourseIds(groups);
+      if (similarIds.length === 0) {
+        return [];
+      }
+      similarMeta = this.buildSimilarCourseMeta(groups);
+      queryBuilder.andWhere('course.id IN (:...similarIds)', { similarIds });
+    }
+
+    const list = await queryWithRetry(
+      () =>
+        queryBuilder
+          .orderBy('course.sort', 'ASC')
+          .addOrderBy('course.id', 'ASC')
+          .getMany(),
+      { action: '获取课程列表', logger: this.logger },
+    );
+
+    if (!filters?.similarOnly || similarMeta.size === 0) {
+      return list;
+    }
+
+    return list.map((course) => {
+      const extra = similarMeta.get(course.id);
+      return extra ? { ...course, ...extra } : course;
+    });
   }
 
   /**
@@ -1371,7 +1656,6 @@ export class AdminCourseService {
       }
       const saved = await this.courseRepository.save(course);
       updatedCourses.push(saved);
-      this.virtualPayGoodsService.scheduleSyncCourseGoods(saved, { force: true });
     }
 
     return {
@@ -1381,12 +1665,25 @@ export class AdminCourseService {
       value: dto.value,
       fields,
       selectAll: dto.selectAll === true,
-      virtual_pay_goods_sync: this.virtualPayGoodsService.buildAdminPriceSyncNotice(),
     };
   }
 
+  private validateCoursePriceFields(dto: CreateCourseDto | UpdateCourseDto) {
+    const isFree = Number(dto.is_free) === 1;
+    if (!isFree && dto.price !== undefined && dto.price !== null) {
+      assertIntegerYuanPrice(Number(dto.price), '价格');
+    }
+    if (dto.agent_price !== undefined && dto.agent_price !== null) {
+      assertIntegerYuanPrice(Number(dto.agent_price), '代理商售价');
+    }
+  }
+
+  private normalizeCoursePrice(value: number): number {
+    return ceilIntegerYuanPrice(value);
+  }
+
   private roundCoursePrice(value: number): number {
-    return Math.round(Math.max(0, value) * 100) / 100;
+    return this.normalizeCoursePrice(value);
   }
 
   private computeAdjustedPrice(current: number, mode: BatchAdjustCoursePriceDto['mode'], value: number): number {

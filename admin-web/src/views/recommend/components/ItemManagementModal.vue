@@ -14,19 +14,13 @@
 				</a-button>
 			</div>
 
-			<a-table
-				:columns="columns"
-				:data-source="itemList"
-				:loading="loading"
-				:pagination="false"
-				row-key="id"
-			>
+			<a-table :columns="columns" :data-source="itemList" :loading="loading" :pagination="false" row-key="id">
 				<template #bodyCell="{ column, record, index }">
 					<template v-if="column.key === 'index'">
 						{{ index + 1 }}
 					</template>
-					<template v-else-if="column.key === 'subject_name'">
-						{{ getSubjectName(record.subject_id) }}
+					<template v-else-if="column.key === 'course_name'">
+						{{ getCourseName(record.course_id) }}
 					</template>
 					<template v-else-if="column.key === 'sort'">
 						<a-input-number
@@ -38,9 +32,7 @@
 						/>
 					</template>
 					<template v-else-if="column.key === 'action'">
-						<a-button type="link" danger size="small" @click="handleRemove(record)">
-							移除
-						</a-button>
+						<a-button type="link" danger size="small" @click="handleRemove(record)"> 移除 </a-button>
 					</template>
 				</template>
 			</a-table>
@@ -56,25 +48,19 @@
 			<a-form :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
 				<a-form-item label="选择题库" :rules="[{ required: true, message: '请选择题库' }]">
 					<a-select
-						v-model:value="addItemForm.subject_id"
+						v-model:value="addItemForm.course_id"
 						placeholder="请选择题库"
-						:filter-option="filterSubjectOption"
+						:filter-option="filterCourseOption"
 						show-search
 					>
-						<a-select-option
-							v-for="subject in availableSubjects"
-							:key="subject.id"
-							:value="subject.id"
-						>
-							{{ subject.name }}
+						<a-select-option v-for="course in availableCourses" :key="course.id" :value="course.id">
+							{{ course.name }}
 						</a-select-option>
 					</a-select>
 				</a-form-item>
 				<a-form-item label="排序权重">
 					<a-input-number v-model:value="addItemForm.sort" :min="0" style="width: 100%" />
-					<div style="color: #999; font-size: 12px; margin-top: 4px">
-						数字越小，排序越靠前
-					</div>
+					<div style="color: #999; font-size: 12px; margin-top: 4px">数字越小，排序越靠前</div>
 				</a-form-item>
 			</a-form>
 		</a-modal>
@@ -86,7 +72,7 @@ import { ref, watch, computed } from 'vue';
 import { message } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
 import { getCategoryDetail, addItem, removeItem, updateItemSort } from '@/api/recommend';
-import { getSubjectList } from '@/api/question';
+import { getCourseList } from '@/api/course';
 
 const props = defineProps<{
 	open: boolean;
@@ -105,10 +91,10 @@ const visible = computed({
 
 const loading = ref(false);
 const itemList = ref<any[]>([]);
-const subjectList = ref<any[]>([]);
+const courseList = ref<any[]>([]);
 const addItemModalVisible = ref(false);
 const addItemForm = ref({
-	subject_id: undefined,
+	course_id: undefined,
 	sort: 0,
 });
 
@@ -120,7 +106,7 @@ const columns = [
 	},
 	{
 		title: '题库名称',
-		key: 'subject_name',
+		key: 'course_name',
 	},
 	{
 		title: '排序权重',
@@ -135,17 +121,17 @@ const columns = [
 ];
 
 // 获取可用题库列表（排除已添加的）
-const availableSubjects = computed(() => {
-	const addedSubjectIds = itemList.value.map((item) => item.subject_id);
-	return subjectList.value.filter((subject) => !addedSubjectIds.includes(subject.id));
+const availableCourses = computed(() => {
+	const addedCourseIds = itemList.value.map((item) => item.course_id);
+	return courseList.value.filter((course) => !addedCourseIds.includes(course.id));
 });
 
-const getSubjectName = (subjectId: number) => {
-	const subject = subjectList.value.find((s) => s.id === subjectId);
-	return subject?.name || `题库ID: ${subjectId}`;
+const getCourseName = (courseId: number) => {
+	const course = courseList.value.find((c) => c.id === courseId);
+	return course?.name || `题库ID: ${courseId}`;
 };
 
-const filterSubjectOption = (input: string, option: any) => {
+const filterCourseOption = (input: string, option: any) => {
 	return option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0;
 };
 
@@ -163,25 +149,25 @@ const fetchItemList = async () => {
 	}
 };
 
-const fetchSubjectList = async () => {
+const fetchCourseList = async () => {
 	try {
-		const res = await getSubjectList();
-		subjectList.value = Array.isArray(res.data) ? res.data : res.data.list || [];
+		const res = await getCourseList();
+		courseList.value = Array.isArray(res.data) ? res.data : res.data.list || [];
 	} catch (error) {
-		console.error('获取科目列表失败:', error);
+		console.error('获取课程列表失败:', error);
 	}
 };
 
 const handleAddItem = () => {
 	addItemForm.value = {
-		subject_id: undefined,
+		course_id: undefined,
 		sort: itemList.value.length > 0 ? Math.max(...itemList.value.map((i) => i.sort)) + 1 : 0,
 	};
 	addItemModalVisible.value = true;
 };
 
 const handleAddItemSubmit = async () => {
-	if (!addItemForm.value.subject_id) {
+	if (!addItemForm.value.course_id) {
 		message.error('请选择题库');
 		return;
 	}
@@ -189,13 +175,13 @@ const handleAddItemSubmit = async () => {
 	try {
 		await addItem({
 			category_id: props.category.id,
-			subject_id: addItemForm.value.subject_id,
+			course_id: addItemForm.value.course_id,
 			sort: addItemForm.value.sort || 0,
 		});
 		message.success('添加成功');
 		addItemModalVisible.value = false;
 		addItemForm.value = {
-			subject_id: undefined,
+			course_id: undefined,
 			sort: 0,
 		};
 		fetchItemList();
@@ -209,7 +195,7 @@ const handleAddItemSubmit = async () => {
 const handleAddItemCancel = () => {
 	addItemModalVisible.value = false;
 	addItemForm.value = {
-		subject_id: undefined,
+		course_id: undefined,
 		sort: 0,
 	};
 };
@@ -253,7 +239,7 @@ watch(
 	() => props.open,
 	(newVal) => {
 		if (newVal) {
-			fetchSubjectList();
+			fetchCourseList();
 			fetchItemList();
 		}
 	}
@@ -267,4 +253,3 @@ watch(
 	}
 }
 </style>
-

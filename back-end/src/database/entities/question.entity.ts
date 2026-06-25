@@ -15,6 +15,7 @@ export enum QuestionType {
   JUDGE = 3, // 判断
   FILL_BLANK = 4, // 填空
   READING_COMPREHENSION = 5, // 阅读理解
+  SHORT_ANSWER = 6, // 简答题
 }
 
 export enum Difficulty {
@@ -56,6 +57,13 @@ export class Question {
     default: Difficulty.MEDIUM,
   })
   difficulty: Difficulty;
+
+  @Column({ name: 'sort_order', type: 'int', default: 0 })
+  sort_order: number; // 序号，用于拖拽排序
+
+  /** 启用状态：1=启用，0=禁用；禁用后前端不展示 */
+  @Column({ type: 'tinyint', default: 1 })
+  status: number;
 
   @CreateDateColumn()
   create_time: Date;

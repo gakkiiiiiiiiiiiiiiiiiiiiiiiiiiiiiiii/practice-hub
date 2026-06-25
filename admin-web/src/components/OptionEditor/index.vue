@@ -30,7 +30,7 @@
 					</div>
 				</a-upload>
 				<div v-if="imageUrl" class="image-preview">
-					<a-image :src="imageUrl" :width="200" :preview="true" />
+					<a-image :src="getProxiedImageUrl(imageUrl)" :width="200" :preview="true" />
 				</div>
 			</div>
 		</a-space>
@@ -42,7 +42,8 @@ import { ref, watch, onMounted } from 'vue';
 import { message } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
 import type { UploadProps, UploadFile } from 'ant-design-vue';
-import { uploadImage } from '@/api/question';
+import { uploadImage } from '@/api/upload';
+import { getProxiedImageUrl } from '@/utils/imageProxy';
 
 const props = defineProps<{
 	modelValue: string;
@@ -117,11 +118,6 @@ const beforeUpload: UploadProps['beforeUpload'] = (file) => {
 		message.error('只能上传图片文件!');
 		return false;
 	}
-	const isLt5M = file.size / 1024 / 1024 < 5;
-	if (!isLt5M) {
-		message.error('图片大小不能超过 5MB!');
-		return false;
-	}
 	return false; // 阻止自动上传，使用自定义上传
 };
 
@@ -129,11 +125,8 @@ const handleUpload = async (options: any) => {
 	const { file, onSuccess, onError } = options;
 
 	try {
-		const formData = new FormData();
-		formData.append('file', file);
-
-		const response = await uploadImage(formData);
-		const url = response.data?.url || response.data?.imageUrl || response.data;
+		const response = await uploadImage(file);
+		const url = response.url || response.imageUrl;
 
 		if (url) {
 			imageUrl.value = url;

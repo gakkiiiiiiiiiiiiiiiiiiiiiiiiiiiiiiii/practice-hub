@@ -9,20 +9,31 @@
 		{
 			"path": "pages/index/index",
 			"style": {
-				"navigationBarTitleText": "首页"
+				"navigationBarTitleText": "首页",
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/bank/index",
 			"style": {
+				"navigationBarTitleText": "练习",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/category/index",
+			"style": {
 				"navigationBarTitleText": "题库",
-				"enablePullDownRefresh": true
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
 			}
 		},
 		{
 			"path": "pages/user/index",
 			"style": {
 				"navigationBarTitleText": "我的",
+				"navigationStyle": "custom",
 				"enablePullDownRefresh": true
 			}
 		},
@@ -37,6 +48,30 @@
 			"path": "pages/login/index",
 			"style": {
 				"navigationBarTitleText": "登录"
+			}
+		},
+		{
+			"path": "pages/distributor/index",
+			"style": {
+				"navigationBarTitleText": "分销中心"
+			}
+		},
+		{
+			"path": "pages/exam/info",
+			"style": {
+				"navigationBarTitleText": "模拟考试"
+			}
+		},
+		{
+			"path": "pages/exam/result",
+			"style": {
+				"navigationBarTitleText": "考试结果"
+			}
+		},
+		{
+			"path": "pages/exam/records",
+			"style": {
+				"navigationBarTitleText": "考试记录"
 			}
 		}
 	],
@@ -63,15 +98,122 @@
 					}
 				},
 				{
+					"path": "collection/index",
+					"style": {
+						"navigationBarTitleText": "我的收藏"
+					}
+				},
+				{
+					"path": "notes/index",
+					"style": {
+						"navigationBarTitleText": "我的笔记"
+					}
+				},
+				{
 					"path": "rank/index",
 					"style": {
 						"navigationBarTitleText": "排行榜"
 					}
 				},
 				{
-					"path": "trajectory/index",
+					"path": "points-mall/index",
 					"style": {
-						"navigationBarTitleText": "学习轨迹"
+						"navigationBarTitleText": "积分商城"
+					}
+				},
+				{
+					"path": "feedback/index",
+					"style": {
+						"navigationBarTitleText": "功能反馈"
+					}
+				},
+				{
+					"path": "faq/index",
+					"style": {
+						"navigationBarTitleText": "常见问题"
+					}
+				},
+				{
+					"path": "invite/index",
+					"style": {
+						"navigationBarTitleText": "邀请好友"
+					}
+				},
+				{
+					"path": "coupon/index",
+					"style": {
+						"navigationBarTitleText": "我的优惠券"
+					}
+				},
+				{
+					"path": "cart/index",
+					"style": {
+						"navigationBarTitleText": "购物车"
+					}
+				},
+				{
+					"path": "package/index",
+					"style": {
+						"navigationBarTitleText": "套餐"
+					}
+				},
+				{
+					"path": "package-detail/index",
+					"style": {
+						"navigationBarTitleText": "套餐详情"
+					}
+				},
+				{
+					"path": "course-intro/index",
+					"style": {
+						"navigationBarTitleText": "课程介绍",
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "file-preview/index",
+					"style": {
+						"navigationBarTitleText": " ",
+						"navigationBarBackgroundColor": "#000000",
+						"navigationBarTextStyle": "white"
+					}
+				},
+				{
+					"path": "course-list/index",
+					"style": {
+						"navigationBarTitleText": "课程列表",
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "course-upload/index",
+					"style": {
+						"navigationBarTitleText": "上传课程"
+					}
+				},
+				{
+					"path": "bank-settings/index",
+					"style": {
+						"navigationBarTitleText": "题库设置",
+						"navigationStyle": "custom"
+					}
+				},
+				{
+					"path": "settings/index",
+					"style": {
+						"navigationBarTitleText": "设置"
+					}
+				},
+				{
+					"path": "profile/index",
+					"style": {
+						"navigationBarTitleText": "个人资料"
+					}
+				},
+				{
+					"path": "agreement/index",
+					"style": {
+						"navigationBarTitleText": "协议说明"
 					}
 				}
 			]
@@ -82,23 +224,33 @@
 		"selectedColor": "#3cc51f",
 		"borderStyle": "black",
 		"backgroundColor": "#ffffff",
+		"fontSize": "15px",
+		"iconWidth": "27px",
+		"spacing": "5px",
+		"height": "60px",
 		"list": [
 			{
 				"pagePath": "pages/index/index",
-				"iconPath": "static/tabbar/home.png",
-				"selectedIconPath": "static/tabbar/home-active.png",
+				"iconPath": "tabbar/home.png",
+				"selectedIconPath": "tabbar/home-active.png",
 				"text": "首页"
 			},
-			{
-				"pagePath": "pages/bank/index",
-				"iconPath": "static/tabbar/book.png",
-				"selectedIconPath": "static/tabbar/book-active.png",
-				"text": "题库"
-			},
+		{
+			"pagePath": "pages/category/index",
+			"iconPath": "tabbar/book.png",
+			"selectedIconPath": "tabbar/book-active.png",
+			"text": "题库"
+		},
+		{
+			"pagePath": "pages/bank/index",
+			"iconPath": "tabbar/practice.png",
+			"selectedIconPath": "tabbar/practice-active.png",
+			"text": "练习"
+		},
 			{
 				"pagePath": "pages/user/index",
-				"iconPath": "static/tabbar/user.png",
-				"selectedIconPath": "static/tabbar/user-active.png",
+				"iconPath": "tabbar/user.png",
+				"selectedIconPath": "tabbar/user-active.png",
 				"text": "我的"
 			}
 		]

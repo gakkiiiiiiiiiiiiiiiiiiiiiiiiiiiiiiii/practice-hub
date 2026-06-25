@@ -1,18 +1,20 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  UseGuards,
-  UseInterceptors,
-  UseFilters,
-  UploadedFile,
-  BadRequestException,
+	Controller,
+	Get,
+	Post,
+	Put,
+	Delete,
+	Body,
+	Param,
+	Query,
+	UseGuards,
+	UseInterceptors,
+	UseFilters,
+	UploadedFile,
+	BadRequestException,
+	Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminQuestionService } from './admin-question.service';
@@ -26,6 +28,10 @@ import { HttpExceptionFilter } from '../../common/filters/http-exception.filter'
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { ImportQuestionDto } from './dto/import-question.dto';
+import { ImportJsonQuestionDto } from './dto/import-json-question.dto';
+import { BatchDeleteQuestionsDto } from './dto/batch-delete-questions.dto';
+import { BatchUpdateOrderDto } from './dto/batch-update-order.dto';
+import { BatchUpdateStatusQuestionsDto } from './dto/batch-update-status.dto';
 import { QuestionType } from '../../database/entities/question.entity';
 
 @ApiTags('管理后台-题目管理')
@@ -36,69 +42,129 @@ import { QuestionType } from '../../database/entities/question.entity';
 @ApiBearerAuth()
 @Roles(AdminRole.SUPER_ADMIN, AdminRole.CONTENT_ADMIN)
 export class AdminQuestionController {
-  constructor(private readonly adminQuestionService: AdminQuestionService) {}
+	constructor(private readonly adminQuestionService: AdminQuestionService) {}
 
-  @Post()
-  @ApiOperation({ summary: '新增/编辑题目' })
-  async saveQuestion(@Body() dto: CreateQuestionDto) {
-    const result = await this.adminQuestionService.saveQuestion(dto);
-    return CommonResponseDto.success(result);
-  }
+	private parseOptionalInteger(value?: string | number, options?: { min?: number }) {
+		if (value === undefined || value === null || value === '') {
+			return undefined;
+		}
+		const num = typeof value === 'number' ? value : Number(value);
+		if (!Number.isFinite(num) || !Number.isInteger(num)) {
+			return undefined;
+		}
+		if (options?.min !== undefined && num < options.min) {
+			return undefined;
+		}
+		return num;
+	}
 
-  @Put(':id')
-  @ApiOperation({ summary: '更新题目' })
-  async updateQuestion(@Param('id') id: number, @Body() dto: UpdateQuestionDto) {
-    const result = await this.adminQuestionService.saveQuestion(dto, +id);
-    return CommonResponseDto.success(result);
-  }
+	@Post()
+	@ApiOperation({ summary: '新增/编辑题目' })
+	async saveQuestion(@Body() dto: CreateQuestionDto) {
+		const result = await this.adminQuestionService.saveQuestion(dto);
+		return CommonResponseDto.success(result);
+	}
 
-  @Get()
-  @ApiOperation({ summary: '题目列表' })
-  async getQuestionList(
-    @Query('subject_id') subjectId?: number,
-    @Query('chapter_id') chapterId?: number,
-    @Query('type') type?: QuestionType,
-  ) {
-    const result = await this.adminQuestionService.getQuestionList(
-      subjectId ? +subjectId : undefined,
-      chapterId ? +chapterId : undefined,
-      type,
-    );
-    return CommonResponseDto.success(result);
-  }
+	@Put(':id')
+	@ApiOperation({ summary: '更新题目' })
+	async updateQuestion(@Param('id') id: number, @Body() dto: UpdateQuestionDto) {
+		const result = await this.adminQuestionService.saveQuestion(dto, +id);
+		return CommonResponseDto.success(result);
+	}
 
-  @Post('import')
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: ImportQuestionDto })
-  @UseInterceptors(FileInterceptor('file'))
-  @ApiOperation({ summary: '批量导入题目' })
-  async importQuestions(
-    @UploadedFile() file: Express.Multer.File,
-    @Body('chapterId') chapterId: string,
-  ) {
-    if (!file) {
-      throw new BadRequestException('文件不能为空');
-    }
-    const dto: ImportQuestionDto = {
-      chapterId: +chapterId,
-      file,
-    };
-    const result = await this.adminQuestionService.importQuestions(dto);
-    return CommonResponseDto.success(result);
-  }
+	@Get()
+	@ApiOperation({ summary: '题目列表' })
+	async getQuestionList(
+		@Query('course_id') courseId?: string,
+		@Query('chapter_id') chapterId?: string,
+		@Query('type') type?: string,
+		@Query('status') status?: string,
+	) {
+		const courseIdNum = this.parseOptionalInteger(courseId, { min: 1 });
+		const chapterIdNum = this.parseOptionalInteger(chapterId, { min: 1 });
+		const typeNum = this.parseOptionalInteger(type, { min: 1 }) as QuestionType | undefined;
+		const statusNum = this.parseOptionalInteger(status, { min: 0 });
 
-  @Get(':id')
-  @ApiOperation({ summary: '获取题目详情' })
-  async getQuestionDetail(@Param('id') id: number) {
-    const result = await this.adminQuestionService.getQuestionDetail(+id);
-    return CommonResponseDto.success(result);
-  }
+		const result = await this.adminQuestionService.getQuestionList(
+			courseIdNum,
+			chapterIdNum,
+			typeNum,
+			statusNum,
+		);
+		return CommonResponseDto.success(result);
+	}
 
-  @Delete(':id')
-  @ApiOperation({ summary: '删除题目' })
-  async deleteQuestion(@Param('id') id: number) {
-    const result = await this.adminQuestionService.deleteQuestion(+id);
-    return CommonResponseDto.success(result);
-  }
+	@Get('template')
+	@ApiOperation({ summary: '下载题目导入模板' })
+	async downloadTemplate(@Res() res: Response) {
+		const buffer = await this.adminQuestionService.generateTemplate();
+		const filename = '题目导入模板.xlsx';
+		// 对中文文件名进行编码，兼容不同浏览器
+		const encodedFilename = encodeURIComponent(filename);
+		res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		res.setHeader(
+			'Content-Disposition',
+			`attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`,
+		);
+		res.send(buffer);
+	}
+
+	@Post('import')
+	@ApiConsumes('multipart/form-data')
+	@ApiBody({ type: ImportQuestionDto })
+	@UseInterceptors(FileInterceptor('file'))
+	@ApiOperation({ summary: '批量导入题目（Excel）' })
+	async importQuestions(@UploadedFile() file: Express.Multer.File, @Body('chapterId') chapterId: string) {
+		if (!file) {
+			throw new BadRequestException('文件不能为空');
+		}
+		const dto: ImportQuestionDto = {
+			chapterId: +chapterId,
+			file,
+		};
+		const result = await this.adminQuestionService.importQuestions(dto);
+		return CommonResponseDto.success(result);
+	}
+
+	@Post('import-json')
+	@ApiOperation({ summary: '批量导入题目（JSON）' })
+	async importQuestionsFromJson(@Body() dto: ImportJsonQuestionDto) {
+		const result = await this.adminQuestionService.importQuestionsFromJson(dto);
+		return CommonResponseDto.success(result);
+	}
+
+	@Get(':id')
+	@ApiOperation({ summary: '获取题目详情' })
+	async getQuestionDetail(@Param('id') id: number) {
+		const result = await this.adminQuestionService.getQuestionDetail(+id);
+		return CommonResponseDto.success(result);
+	}
+
+	@Delete(':id')
+	@ApiOperation({ summary: '删除题目' })
+	async deleteQuestion(@Param('id') id: number) {
+		const result = await this.adminQuestionService.deleteQuestion(+id);
+		return CommonResponseDto.success(result);
+	}
+
+	@Post('batch-delete')
+	@ApiOperation({ summary: '批量删除题目' })
+	async batchDeleteQuestions(@Body() dto: BatchDeleteQuestionsDto) {
+		const result = await this.adminQuestionService.batchDeleteQuestions(dto.ids);
+		return CommonResponseDto.success(result);
+	}
+
+	@Post('batch-update-order')
+	@ApiOperation({ summary: '批量更新题目序号（拖拽排序）' })
+	async batchUpdateOrder(@Body() dto: BatchUpdateOrderDto) {
+		const result = await this.adminQuestionService.batchUpdateOrder(dto.orders);
+		return CommonResponseDto.success(result);
+	}
+
+	@Post('batch-update-status')
+	@ApiOperation({ summary: '批量启用/禁用题目' })
+	async batchUpdateStatus(@Body() dto: BatchUpdateStatusQuestionsDto) {
+		const result = await this.adminQuestionService.batchUpdateStatus(dto.ids, dto.status);
+		return CommonResponseDto.success(result);
+	}
 }
-

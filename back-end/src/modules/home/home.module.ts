@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { HomeService } from './home.service';
 import { HomeController } from './home.controller';
-import { RedisModule } from '../../common/redis/redis.module';
+import { BannerModule } from '../banner/banner.module';
+import { SystemModule } from '../system/system.module';
 
 @Module({
-  imports: [RedisModule],
+  imports: [BannerModule, SystemModule],
   controllers: [HomeController],
   providers: [HomeService],
 })

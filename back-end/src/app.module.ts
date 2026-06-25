@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -6,81 +6,146 @@ import { APP_FILTER } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { LoggingMiddleware } from './common/middleware/logging.middleware';
 import { DatabaseModule } from './database/database.module';
-import { RedisModule } from './common/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
-import { SubjectModule } from './modules/subject/subject.module';
+import { CourseModule } from './modules/course/course.module';
 import { QuestionModule } from './modules/question/question.module';
 import { OrderModule } from './modules/order/order.module';
 import { ActivationCodeModule } from './modules/activation-code/activation-code.module';
 import { WrongBookModule } from './modules/wrong-book/wrong-book.module';
 import { CollectionModule } from './modules/collection/collection.module';
+import { NoteModule } from './modules/note/note.module';
 import { HomeModule } from './modules/home/home.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { SystemModule } from './modules/system/system.module';
 import { RecommendModule } from './modules/recommend/recommend.module';
-import { AdminSubjectModule } from './modules/admin-subject/admin-subject.module';
+import { AdminCourseModule } from './modules/admin-course/admin-course.module';
 import { AdminQuestionModule } from './modules/admin-question/admin-question.module';
 import { AdminActivationCodeModule } from './modules/admin-activation-code/admin-activation-code.module';
 import { AdminChapterModule } from './modules/admin-chapter/admin-chapter.module';
+import { AdminCourseCategoryModule } from './modules/admin-course-category/admin-course-category.module';
+import { UploadModule } from './modules/upload/upload.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
+import { DistributorModule } from './modules/distributor/distributor.module';
+import { ExamModule } from './modules/exam/exam.module';
+import { SystemAccountModule } from './modules/system-account/system-account.module';
+import { SystemRoleModule } from './modules/system-role/system-role.module';
+import { BannerModule } from './modules/banner/banner.module';
+import { PageRouteModule } from './modules/page-route/page-route.module';
+import { AfterSaleModule } from './modules/after-sale/after-sale.module';
+import { TrajectoryModule } from './modules/trajectory/trajectory.module';
+import { ProcessPdfModule } from './modules/process-pdf/process-pdf.module';
+import { MarketingModule } from './modules/marketing/marketing.module';
+import { PackageModule } from './modules/package/package.module';
+import { AdminPackageModule } from './modules/admin-package/admin-package.module';
+import { CourseTypeModule } from './modules/course-type/course-type.module';
 
 @Module({
-  imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: ['.env.local', '.env'],
-    }),
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        type: 'mysql',
-        host: configService.get('DB_HOST', 'localhost'),
-        port: configService.get<number>('DB_PORT', 3306),
-        username: configService.get('DB_USERNAME', 'root'),
-        password: configService.get('DB_PASSWORD', ''),
-        database: configService.get('DB_DATABASE', 'practice_hub'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: configService.get('NODE_ENV') === 'development',
-        logging: configService.get('NODE_ENV') === 'development',
-        timezone: '+08:00',
-        charset: 'utf8mb4',
-        extra: {
-          authPlugin: 'mysql_native_password',
-        },
-      }),
-      inject: [ConfigService],
-    }),
-    ScheduleModule.forRoot(),
-    RedisModule,
-    DatabaseModule,
-    AuthModule,
-    UserModule,
-    SubjectModule,
-    QuestionModule,
-    OrderModule,
-    ActivationCodeModule,
-    WrongBookModule,
-    CollectionModule,
-    HomeModule,
-    AdminModule,
-    DashboardModule,
-    SystemModule,
-    RecommendModule,
-    AdminSubjectModule,
-    AdminQuestionModule,
-    AdminActivationCodeModule,
-    AdminChapterModule,
-  ],
-  controllers: [AppController],
-  providers: [
-    AppService,
-    {
-      provide: APP_FILTER,
-      useClass: HttpExceptionFilter,
-    },
-  ],
-})
-export class AppModule {}
+	imports: [
+		ConfigModule.forRoot({
+			isGlobal: true,
+			envFilePath: ['.env.local', '.env.pay', '.env'],
+		}),
+		TypeOrmModule.forRootAsync({
+			imports: [ConfigModule],
+			useFactory: (configService: ConfigService) => {
+				const dbHost = configService.get('DB_HOST', 'localhost');
+				const dbPort = configService.get<number>('DB_PORT', 3306);
+				const dbUsername = configService.get('DB_USERNAME', 'root');
+				const dbPassword = configService.get('DB_PASSWORD', '');
+				const dbDatabase = configService.get('DB_DATABASE', 'practice_hub');
+				const nodeEnv = configService.get('NODE_ENV', 'development');
+				const dbConnectionLimit = configService.get<number>('DB_CONNECTION_LIMIT', 10);
+				const dbMaxIdle = configService.get<number>('DB_MAX_IDLE', Math.max(1, Math.floor(dbConnectionLimit / 2)));
+				const dbIdleTimeout = configService.get<number>('DB_IDLE_TIMEOUT', 30000);
 
+				// 安全：不在日志中打印敏感信息（如密码）
+				console.log(`[数据库配置] 连接地址: ${dbHost}:${dbPort}, 数据库: ${dbDatabase}`);
+
+				return {
+					type: 'mysql',
+					host: dbHost,
+					port: dbPort,
+					username: dbUsername,
+					password: dbPassword,
+					database: dbDatabase,
+					entities: [__dirname + '/**/*.entity{.ts,.js}'],
+					synchronize: nodeEnv === 'development',
+					logging: nodeEnv === 'development',
+					timezone: '+08:00',
+					charset: 'utf8mb4',
+					retryAttempts: 10,
+					retryDelay: 3000,
+					autoLoadEntities: true,
+					// 连接池配置，防止 ECONNRESET 错误
+					extra: {
+						// mysql2 连接池配置（仅使用 mysql2 支持的选项，避免 invalid configuration 警告）
+						waitForConnections: true,
+						connectionLimit: dbConnectionLimit, // 连接池最大连接数
+						maxIdle: dbMaxIdle, // 限制空闲连接数量，避免复用过多陈旧连接
+						idleTimeout: dbIdleTimeout, // 空闲连接更早回收，低于云数据库/网关常见空闲断开时间
+						queueLimit: 0,
+						connectTimeout: 60000, // 连接超时时间（毫秒）
+						// 启用 keep-alive，保持连接活跃
+						enableKeepAlive: true,
+						keepAliveInitialDelay: 0,
+						// 注意：acquireTimeout / timeout / maxLifetime 为 TypeORM 池级选项，mysql2 Connection 不支持，已移除
+					},
+				};
+			},
+			inject: [ConfigService],
+		}),
+		ScheduleModule.forRoot(),
+		DatabaseModule,
+		AuthModule,
+		UserModule,
+		CourseModule,
+		QuestionModule,
+		OrderModule,
+		ActivationCodeModule,
+		WrongBookModule,
+		CollectionModule,
+		NoteModule,
+		HomeModule,
+		AdminModule, // 必须在 SystemModule 之前，避免路由冲突
+		DashboardModule,
+		SystemModule, // SystemController 使用 @Controller('admin')，可能拦截其他 admin 路由
+		RecommendModule,
+		AdminCourseModule,
+		AdminQuestionModule,
+		AdminActivationCodeModule,
+		AdminChapterModule,
+		AdminCourseCategoryModule,
+		UploadModule,
+		FeedbackModule,
+		DistributorModule,
+		ExamModule,
+		SystemAccountModule,
+		SystemRoleModule,
+		BannerModule,
+		PageRouteModule,
+		AfterSaleModule,
+		TrajectoryModule,
+		ProcessPdfModule,
+		MarketingModule,
+		PackageModule,
+		AdminPackageModule,
+		CourseTypeModule,
+	],
+	controllers: [AppController],
+	providers: [
+		AppService,
+		{
+			provide: APP_FILTER,
+			useClass: HttpExceptionFilter,
+		},
+	],
+})
+export class AppModule implements NestModule {
+	configure(consumer: MiddlewareConsumer) {
+		consumer.apply(LoggingMiddleware).forRoutes('*'); // 应用到所有路由
+	}
+}

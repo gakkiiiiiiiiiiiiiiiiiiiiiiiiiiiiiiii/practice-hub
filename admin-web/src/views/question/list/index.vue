@@ -1,19 +1,43 @@
 <template>
 	<div class="question-list">
 		<a-card>
-			<template #title>试题管理</template>
 			<template #extra>
 				<a-space>
+					<a-button
+						:disabled="selectedRowKeys.length === 0"
+						@click="batchUpdateStatus(1)"
+					>
+						<template #icon><check-circle-outlined /></template>
+						批量启用 ({{ selectedRowKeys.length || 0 }})
+					</a-button>
+					<a-button
+						:disabled="selectedRowKeys.length === 0"
+						@click="batchUpdateStatus(0)"
+					>
+						<template #icon><stop-outlined /></template>
+						批量禁用 ({{ selectedRowKeys.length || 0 }})
+					</a-button>
+					<a-button
+						type="primary"
+						danger
+						:disabled="selectedRowKeys.length === 0"
+						@click="showBatchDeleteModal"
+					>
+						<template #icon><delete-outlined /></template>
+						批量删除 ({{ selectedRowKeys.length || 0 }})
+					</a-button>
 					<a-button @click="handleDownloadTemplate">
 						<template #icon><download-outlined /></template>
 						下载模板
 					</a-button>
-					<a-upload :before-upload="handleImport" :show-upload-list="false" accept=".xlsx,.xls,.doc,.docx">
-						<a-button>
-							<template #icon><upload-outlined /></template>
-							批量导入
-						</a-button>
-					</a-upload>
+					<a-button @click="showImportModal">
+						<template #icon><upload-outlined /></template>
+						批量导入
+					</a-button>
+					<a-button @click="showJsonImportModal">
+						<template #icon><file-text-outlined /></template>
+						JSON 导入
+					</a-button>
 					<a-button type="primary" @click="handleAdd">
 						<template #icon><plus-outlined /></template>
 						新增题目
@@ -22,10 +46,10 @@
 			</template>
 
 			<a-form :model="searchForm" layout="inline" class="search-form">
-				<a-form-item label="科目">
-					<a-select v-model:value="searchForm.subjectId" placeholder="请选择" style="width: 150px" allow-clear>
-						<a-select-option v-for="subject in subjectList" :key="subject.id" :value="subject.id">
-							{{ subject.name }}
+				<a-form-item label="课程">
+					<a-select v-model:value="searchForm.courseId" placeholder="请选择" style="width: 150px" allow-clear>
+						<a-select-option v-for="course in courseList" :key="course.id" :value="course.id">
+							{{ course.name }}
 						</a-select-option>
 					</a-select>
 				</a-form-item>
@@ -45,40 +69,95 @@
 						<a-select-option :value="5">阅读理解</a-select-option>
 					</a-select>
 				</a-form-item>
+				<a-form-item label="状态">
+					<a-select v-model:value="searchForm.status" placeholder="全部" style="width: 100px" allow-clear>
+						<a-select-option :value="1">启用</a-select-option>
+						<a-select-option :value="0">禁用</a-select-option>
+					</a-select>
+				</a-form-item>
 				<a-form-item>
 					<a-button type="primary" @click="handleSearch">查询</a-button>
 					<a-button style="margin-left: 8px" @click="handleReset">重置</a-button>
 				</a-form-item>
 			</a-form>
 
+			<div class="table-toolbar">
+				<TableColumnSetting :items="settingItems" @update:items="updatePreference" @reset="resetColumns" />
+			</div>
+
 			<a-table
-				:columns="columns"
+				:columns="displayColumns"
 				:data-source="dataSource"
 				:loading="loading"
 				:pagination="pagination"
+				:row-selection="{ selectedRowKeys, onChange: onSelectChange }"
+				:custom-row="customRow"
 				@change="handleTableChange"
 				row-key="id"
 			>
-				<template #bodyCell="{ column, record }">
-					<template v-if="column.key === 'type'">
+				<template #bodyCell="{ column, record, index }">
+					<template v-if="column.key === 'sortOrder'">
+						<span
+							class="sort-order-cell"
+							@dragover="(e: DragEvent) => { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; }"
+							@drop="(e: DragEvent) => { e.preventDefault(); handleSortDrop(record); }"
+						>
+							<holder-outlined
+								class="drag-handle"
+								title="拖拽排序"
+								draggable="true"
+								@dragstart="handleSortDragStart($event, record)"
+							/>
+							<template v-if="editingSortOrderId === record.id">
+								<a-input-number
+									v-model:value="editingSortOrderValue"
+									:min="0"
+									:max="Math.max((pagination.total || 0) - 1, 0)"
+									size="small"
+									class="sort-order-input"
+									@blur="applySortOrderEdit(record)"
+									@keyup.enter="applySortOrderEdit(record)"
+								/>
+							</template>
+							<template v-else>
+								<span
+									class="sort-order-text"
+									title="点击修改序号"
+									@click="startEditSortOrder(record, index)"
+								>
+									{{ record.sort_order != null ? record.sort_order : index + 1 }}
+								</span>
+							</template>
+						</span>
+					</template>
+					<template v-else-if="column.key === 'status'">
+						<a-switch
+							:checked="record.status === 1"
+							:loading="statusUpdatingId === record.id"
+							checked-children="启用"
+							un-checked-children="禁用"
+							@change="(checked: boolean) => toggleStatus(record, checked)"
+						/>
+					</template>
+					<template v-else-if="column.key === 'type'">
 						<a-tag>
 							{{
 								record.type === 1
 									? '单选题'
 									: record.type === 2
-									? '多选题'
-									: record.type === 3
-									? '判断题'
-									: record.type === 4
-									? '填空题'
-									: record.type === 5
-									? '阅读理解'
-									: '未知'
+										? '多选题'
+										: record.type === 3
+											? '判断题'
+											: record.type === 4
+												? '填空题'
+												: record.type === 5
+													? '阅读理解'
+													: '未知'
 							}}
 						</a-tag>
 					</template>
 					<template v-else-if="column.key === 'stem'">
-						<span v-html="getStemText(record.stem)"></span>
+						<span>{{ getStemText(record.stem) }}</span>
 					</template>
 					<template v-else-if="column.key === 'action'">
 						<a-space>
@@ -103,37 +182,139 @@
 				题目ID: {{ currentDeleteRecord.id }}
 			</p>
 		</a-modal>
+
+		<!-- 批量删除确认弹窗 -->
+		<a-modal
+			v-model:open="batchDeleteModalVisible"
+			title="批量删除确认"
+			:confirm-loading="batchDeleteLoading"
+			@ok="confirmBatchDelete"
+			@cancel="cancelBatchDelete"
+		>
+			<p>确定要删除选中的 {{ selectedRowKeys.length }} 道题目吗？</p>
+			<p style="color: #ff4d4f; font-size: 12px; margin-top: 8px">此操作不可恢复，请谨慎操作！</p>
+		</a-modal>
+
+		<!-- 导入题目弹窗 -->
+		<a-modal
+			v-model:open="importModalVisible"
+			title="批量导入题目"
+			:confirm-loading="importLoading"
+			@ok="confirmImport"
+			@cancel="cancelImport"
+			:width="500"
+			:ok-button-props="{ disabled: !canImport }"
+		>
+			<a-form :model="importForm" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
+				<a-form-item label="课程" :required="true">
+					<a-select
+						v-model:value="importForm.courseId"
+						placeholder="请选择课程"
+						style="width: 100%"
+						@change="handleImportCourseChange"
+					>
+						<a-select-option v-for="course in courseList" :key="course.id" :value="course.id">
+							{{ course.name }}
+						</a-select-option>
+					</a-select>
+				</a-form-item>
+				<a-form-item label="章节" :required="true">
+					<a-select
+						v-model:value="importForm.chapterId"
+						placeholder="请先选择课程"
+						style="width: 100%"
+						:disabled="!importForm.courseId"
+					>
+						<a-select-option v-for="chapter in importChapterList" :key="chapter.id" :value="chapter.id">
+							{{ chapter.name }}
+						</a-select-option>
+					</a-select>
+				</a-form-item>
+				<a-form-item label="文件" :required="true">
+					<a-upload
+						:before-upload="handleFileSelect"
+						:show-upload-list="false"
+						accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+						:disabled="!importForm.courseId || !importForm.chapterId"
+					>
+						<a-button :disabled="!importForm.courseId || !importForm.chapterId">
+							<template #icon><upload-outlined /></template>
+							{{ importFile ? importFile.name : '选择文件' }}
+						</a-button>
+					</a-upload>
+					<div v-if="importFile" style="margin-top: 8px; color: #52c41a; font-size: 12px">
+						已选择：{{ importFile.name }}
+					</div>
+					<div v-else style="margin-top: 8px; color: #999; font-size: 12px">
+						请先选择课程和章节，然后选择要导入的Excel文件（.xlsx 或 .xls 格式）
+					</div>
+				</a-form-item>
+			</a-form>
+		</a-modal>
+
+		<!-- JSON 导入弹窗 -->
+		<json-import-modal v-model:open="jsonImportModalVisible" @success="handleJsonImportSuccess" />
 	</div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { message } from 'ant-design-vue';
-import { PlusOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons-vue';
+import {
+	PlusOutlined,
+	DownloadOutlined,
+	UploadOutlined,
+	DeleteOutlined,
+	FileTextOutlined,
+	HolderOutlined,
+	CheckCircleOutlined,
+	StopOutlined,
+} from '@ant-design/icons-vue';
+import { stripHtmlTags } from '@/utils/sanitize';
 import {
 	getQuestionList,
 	deleteQuestion,
-	getSubjectList,
+	deleteQuestionsBatch,
+	batchUpdateQuestionStatus,
 	getChapterList,
-	downloadQuestionTemplate,
 	importQuestions,
+	batchUpdateQuestionOrder,
 } from '@/api/question';
+import { generateQuestionTemplate } from '@/utils/excel-template';
+import { getCourseList } from '@/api/course';
+import JsonImportModal from './components/JsonImportModal.vue';
+import TableColumnSetting from '@/components/TableColumnSetting/index.vue';
+import { useTableColumns } from '@/composables/useTableColumns';
 
 const router = useRouter();
 
 const loading = ref(false);
 const dataSource = ref<any[]>([]);
-const subjectList = ref<any[]>([]);
+const courseList = ref<any[]>([]);
 const chapterList = ref<any[]>([]);
 const deleteModalVisible = ref(false);
 const deleteLoading = ref(false);
 const currentDeleteRecord = ref<any>(null);
+const selectedRowKeys = ref<number[]>([]);
+const batchDeleteModalVisible = ref(false);
+const batchDeleteLoading = ref(false);
+const importModalVisible = ref(false);
+const importLoading = ref(false);
+const importFile = ref<File | null>(null);
+const importChapterList = ref<any[]>([]);
+const jsonImportModalVisible = ref(false);
 
 const searchForm = ref({
-	subjectId: undefined,
+	courseId: undefined,
 	chapterId: undefined,
 	type: undefined,
+	status: undefined as number | undefined,
+});
+
+const importForm = ref({
+	courseId: undefined,
+	chapterId: undefined,
 });
 
 const pagination = ref({
@@ -142,7 +323,12 @@ const pagination = ref({
 	total: 0,
 });
 
-const columns = [
+const baseColumns = [
+	{
+		title: '序号',
+		key: 'sortOrder',
+		width: 80,
+	},
 	{
 		title: 'ID',
 		dataIndex: 'id',
@@ -150,14 +336,20 @@ const columns = [
 		width: 80,
 	},
 	{
-		title: '科目',
-		dataIndex: 'subjectName',
-		key: 'subjectName',
+		title: '课程',
+		dataIndex: 'courseName',
+		key: 'courseName',
 	},
 	{
 		title: '章节',
 		dataIndex: 'chapterName',
 		key: 'chapterName',
+	},
+	{
+		title: '状态',
+		dataIndex: 'status',
+		key: 'status',
+		width: 100,
 	},
 	{
 		title: '题型',
@@ -176,24 +368,29 @@ const columns = [
 	},
 ];
 
-const fetchSubjects = async () => {
+const { displayColumns, settingItems, resetColumns, updatePreference } = useTableColumns('question-list', baseColumns, {
+	lockLeftKeys: ['sortOrder'],
+	lockRightKeys: ['action'],
+});
+
+const fetchCourses = async () => {
 	try {
-		const res = await getSubjectList();
+		const res = await getCourseList();
 		// 后端返回的是数组，不是分页对象
-		subjectList.value = Array.isArray(res.data) ? res.data : res.data.list || [];
+		courseList.value = Array.isArray(res.data) ? res.data : res.data.list || [];
 	} catch (error) {
-		console.error('获取科目列表失败:', error);
+		console.error('获取课程列表失败:', error);
 	}
 };
 
 const fetchChapters = async () => {
-	if (!searchForm.value.subjectId) {
+	if (!searchForm.value.courseId) {
 		chapterList.value = [];
 		return;
 	}
 	try {
 		const res = await getChapterList({
-			subjectId: searchForm.value.subjectId,
+			courseId: searchForm.value.courseId,
 		});
 		// 后端返回的是数组，不是分页对象
 		chapterList.value = Array.isArray(res.data) ? res.data : res.data.list || [];
@@ -206,16 +403,19 @@ const fetchChapters = async () => {
 const fetchData = async () => {
 	loading.value = true;
 	try {
-		// 后端查询参数是 subject_id 和 chapter_id
+		// 后端查询参数是 course_id 和 chapter_id
 		const params: any = {};
-		if (searchForm.value.subjectId) {
-			params.subject_id = searchForm.value.subjectId;
+		if (searchForm.value.courseId) {
+			params.course_id = searchForm.value.courseId;
 		}
 		if (searchForm.value.chapterId) {
 			params.chapter_id = searchForm.value.chapterId;
 		}
 		if (searchForm.value.type) {
 			params.type = searchForm.value.type;
+		}
+		if (searchForm.value.status !== undefined && searchForm.value.status !== null) {
+			params.status = searchForm.value.status;
 		}
 
 		const res = await getQuestionList(params);
@@ -243,11 +443,46 @@ const handleSearch = () => {
 
 const handleReset = () => {
 	searchForm.value = {
-		subjectId: undefined,
+		courseId: undefined,
 		chapterId: undefined,
 		type: undefined,
+		status: undefined,
 	};
 	handleSearch();
+};
+
+const statusUpdatingId = ref<number | null>(null);
+const toggleStatus = async (record: any, enable: boolean) => {
+	const status = enable ? 1 : 0;
+	statusUpdatingId.value = record.id;
+	try {
+		await batchUpdateQuestionStatus([record.id], status);
+		record.status = status;
+		message.success(enable ? '已启用' : '已禁用');
+	} catch (e) {
+		message.error('操作失败');
+	} finally {
+		statusUpdatingId.value = null;
+	}
+};
+
+const batchStatusLoading = ref(false);
+const batchUpdateStatus = async (status: number) => {
+	if (selectedRowKeys.value.length === 0) {
+		message.warning('请先选择题目');
+		return;
+	}
+	batchStatusLoading.value = true;
+	try {
+		await batchUpdateQuestionStatus(selectedRowKeys.value, status);
+		message.success(status === 1 ? '已批量启用' : '已批量禁用');
+		selectedRowKeys.value = [];
+		fetchData();
+	} catch (e) {
+		message.error('操作失败');
+	} finally {
+		batchStatusLoading.value = false;
+	}
 };
 
 const handleAdd = () => {
@@ -280,6 +515,7 @@ const confirmDelete = async () => {
 		message.success('删除成功');
 		deleteModalVisible.value = false;
 		currentDeleteRecord.value = null;
+		selectedRowKeys.value = [];
 		fetchData();
 	} catch (error) {
 		message.error('删除失败');
@@ -288,55 +524,263 @@ const confirmDelete = async () => {
 	}
 };
 
+// 选择变化
+const onSelectChange = (keys: number[]) => {
+	selectedRowKeys.value = keys;
+};
+
+// 序号列：表格内直接修改
+const editingSortOrderId = ref<number | null>(null);
+const editingSortOrderValue = ref<number>(0);
+const startEditSortOrder = (record: any, index: number) => {
+	editingSortOrderId.value = record.id;
+	const page = pagination.value.current;
+	const pageSize = pagination.value.pageSize;
+	const baseOrder = (page - 1) * pageSize;
+	editingSortOrderValue.value = record.sort_order != null ? record.sort_order : baseOrder + index;
+};
+const applySortOrderEdit = async (record: any) => {
+	if (editingSortOrderId.value !== record.id) return;
+	const raw = editingSortOrderValue.value;
+	if (Number.isNaN(raw) || raw < 0) {
+		editingSortOrderId.value = null;
+		return;
+	}
+	editingSortOrderId.value = null;
+	const page = pagination.value.current;
+	const pageSize = pagination.value.pageSize;
+	const baseOrder = (page - 1) * pageSize;
+	// 用户输入为序号（与表格展示一致），换算为当前页内目标下标
+	const targetPos = Math.min(Math.max(raw - baseOrder, 0), dataSource.value.length - 1);
+	const list = [...dataSource.value];
+	const fromIndex = list.findIndex((r) => r.id === record.id);
+	if (fromIndex === -1) return;
+	const [moved] = list.splice(fromIndex, 1);
+	list.splice(targetPos, 0, moved);
+	const orders = list.map((row, i) => ({ id: row.id, sort_order: baseOrder + i }));
+	try {
+		await batchUpdateQuestionOrder(orders);
+		dataSource.value = list.map((row, i) => ({ ...row, sort_order: baseOrder + i }));
+		message.success('序号已更新');
+	} catch (err: any) {
+		message.error(err?.message || '序号更新失败');
+	}
+};
+
+// 拖拽排序：仅在手柄上拖拽，在序号单元格上放置
+const dragRowId = ref<number | null>(null);
+const handleSortDragStart = (e: DragEvent, record: any) => {
+	dragRowId.value = record.id;
+	e.dataTransfer!.effectAllowed = 'move';
+	e.dataTransfer!.setData('text/plain', String(record.id));
+};
+const handleSortDrop = async (targetRecord: any) => {
+	const fromId = dragRowId.value;
+	if (fromId == null) return;
+	const toId = targetRecord.id;
+	if (fromId === toId) {
+		dragRowId.value = null;
+		return;
+	}
+	dragRowId.value = null;
+	const list = [...dataSource.value];
+	const fromIndex = list.findIndex((r) => r.id === fromId);
+	const toIndex = list.findIndex((r) => r.id === toId);
+	if (fromIndex === -1 || toIndex === -1) return;
+	const [moved] = list.splice(fromIndex, 1);
+	list.splice(toIndex, 0, moved);
+	const page = pagination.value.current;
+	const pageSize = pagination.value.pageSize;
+	const baseOrder = (page - 1) * pageSize;
+	const orders = list.map((row, i) => ({ id: row.id, sort_order: baseOrder + i }));
+	try {
+		await batchUpdateQuestionOrder(orders);
+		dataSource.value = list.map((row, i) => ({ ...row, sort_order: baseOrder + i }));
+		message.success('排序已更新');
+	} catch (err: any) {
+		message.error(err?.message || '排序更新失败');
+	}
+};
+const customRow = () => ({});
+
+// 显示批量删除确认弹窗
+const showBatchDeleteModal = () => {
+	if (selectedRowKeys.value.length === 0) {
+		message.warning('请先选择要删除的题目');
+		return;
+	}
+	batchDeleteModalVisible.value = true;
+};
+
+// 取消批量删除
+const cancelBatchDelete = () => {
+	batchDeleteModalVisible.value = false;
+};
+
+// 确认批量删除
+const confirmBatchDelete = async () => {
+	if (selectedRowKeys.value.length === 0) return;
+
+	batchDeleteLoading.value = true;
+	try {
+		await deleteQuestionsBatch(selectedRowKeys.value);
+		message.success(`成功删除 ${selectedRowKeys.value.length} 道题目`);
+		batchDeleteModalVisible.value = false;
+		selectedRowKeys.value = [];
+		fetchData();
+	} catch (error: any) {
+		message.error(error.msg || '批量删除失败');
+	} finally {
+		batchDeleteLoading.value = false;
+	}
+};
+
 const handleDownloadTemplate = async () => {
 	try {
-		const res = await downloadQuestionTemplate();
-		// 从响应中获取 blob
-		const blob = res instanceof Blob ? res : new Blob([res.data || res]);
+		// 前端生成模板
+		const blob = await generateQuestionTemplate();
+
 		const url = window.URL.createObjectURL(blob);
 		const link = document.createElement('a');
 		link.href = url;
 		link.download = '题目导入模板.xlsx';
+		document.body.appendChild(link);
 		link.click();
+		document.body.removeChild(link);
 		window.URL.revokeObjectURL(url);
-	} catch (error) {
-		message.error('下载模板失败');
+		message.success('模板下载成功');
+	} catch (error: any) {
+		console.error('下载模板失败:', error);
+		message.error(error?.message || '下载模板失败');
 	}
 };
 
-const handleImport = async (file: File) => {
+// 显示导入弹窗
+const showImportModal = () => {
+	importModalVisible.value = true;
+	importForm.value = {
+		courseId: undefined,
+		chapterId: undefined,
+	};
+	importFile.value = null;
+	importChapterList.value = [];
+};
+
+// 处理文件选择
+const handleFileSelect = (file: File) => {
+	// 验证文件类型
+	const allowedTypes = [
+		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+		'application/vnd.ms-excel', // .xls
+	];
+	const allowedExtensions = ['.xlsx', '.xls'];
+
+	const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+	const isValidType = allowedTypes.includes(file.type) || allowedExtensions.includes(fileExtension);
+
+	if (!isValidType) {
+		message.error('只能选择 Excel 格式的文件（.xlsx 或 .xls）');
+		return false;
+	}
+
+	importFile.value = file;
+	return false; // 阻止自动上传
+};
+
+// 导入弹窗中课程变化
+const handleImportCourseChange = async (courseId: number) => {
+	importForm.value.chapterId = undefined;
+	if (!courseId) {
+		importChapterList.value = [];
+		return;
+	}
+	try {
+		const res = await getChapterList({ courseId });
+		importChapterList.value = Array.isArray(res.data) ? res.data : res.data.list || [];
+	} catch (error) {
+		console.error('获取章节列表失败:', error);
+		importChapterList.value = [];
+	}
+};
+
+// 计算是否可以导入（必须选择课程、章节和文件）
+const canImport = computed(() => {
+	return !!importForm.value.courseId && !!importForm.value.chapterId && !!importFile.value;
+});
+
+// 确认导入
+const confirmImport = async () => {
+	if (!importForm.value.courseId) {
+		message.warning('请选择课程');
+		return;
+	}
+	if (!importForm.value.chapterId) {
+		message.warning('请选择章节');
+		return;
+	}
+	if (!importFile.value) {
+		message.warning('请选择要导入的文件');
+		return;
+	}
+
+	importLoading.value = true;
 	try {
 		const formData = new FormData();
-		formData.append('file', file);
+		formData.append('file', importFile.value);
+		formData.append('chapterId', String(importForm.value.chapterId));
 		await importQuestions(formData);
 		message.success('导入成功');
+		importModalVisible.value = false;
+		importFile.value = null;
+		importForm.value = {
+			courseId: undefined,
+			chapterId: undefined,
+		};
+		importChapterList.value = [];
 		fetchData();
-	} catch (error) {
-		message.error('导入失败');
+	} catch (error: any) {
+		message.error(error?.message || error?.msg || '导入失败');
+	} finally {
+		importLoading.value = false;
 	}
-	return false;
+};
+
+// 取消导入
+const cancelImport = () => {
+	importModalVisible.value = false;
+	importFile.value = null;
+	importForm.value = {
+		courseId: undefined,
+		chapterId: undefined,
+	};
+	importChapterList.value = [];
+};
+
+// 显示 JSON 导入弹窗
+const showJsonImportModal = () => {
+	jsonImportModalVisible.value = true;
+};
+
+// JSON 导入成功
+const handleJsonImportSuccess = () => {
+	fetchData();
 };
 
 // 获取题干纯文本（去除HTML标签）
 const getStemText = (html: string) => {
-	if (!html) return '';
-	const div = document.createElement('div');
-	div.innerHTML = html;
-	const text = div.textContent || div.innerText || '';
-	// 限制显示长度
-	return text.length > 50 ? text.substring(0, 50) + '...' : text;
+	return stripHtmlTags(html);
 };
 
 watch(
-	() => searchForm.value.subjectId,
+	() => searchForm.value.courseId,
 	() => {
 		searchForm.value.chapterId = undefined;
 		fetchChapters();
-	}
+	},
 );
 
 onMounted(() => {
-	fetchSubjects();
+	fetchCourses();
 	fetchData();
 });
 </script>
@@ -345,6 +789,28 @@ onMounted(() => {
 .question-list {
 	.search-form {
 		margin-bottom: 16px;
+	}
+	.sort-order-cell {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		.drag-handle {
+			cursor: grab;
+			color: #999;
+			&:active {
+				cursor: grabbing;
+			}
+		}
+		.sort-order-input {
+			width: 56px;
+		}
+		.sort-order-text {
+			cursor: pointer;
+			min-width: 20px;
+			&:hover {
+				color: var(--ant-primary-color);
+			}
+		}
 	}
 }
 </style>

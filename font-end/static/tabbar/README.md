@@ -4,8 +4,8 @@
 
 - `home.png` - 首页未选中图标
 - `home-active.png` - 首页选中图标
-- `book.png` - 题库未选中图标
-- `book-active.png` - 题库选中图标
+- `practice.png` - 练习未选中图标
+- `practice-active.png` - 练习选中图标
 - `user.png` - 我的未选中图标
 - `user-active.png` - 我的选中图标
 
