@@ -1848,7 +1848,7 @@ export class OrderService {
       apiUrl:
         this.configService.get<string>('KDNIAO_API_URL') ||
         'https://api.kdniao.com/Ebusiness/EbusinessOrderHandle.aspx',
-      queryRequestType: this.configService.get<string>('KDNIAO_QUERY_REQUEST_TYPE') || '8001',
+      queryRequestType: this.configService.get<string>('KDNIAO_QUERY_REQUEST_TYPE') || '1002',
       recognizeRequestType: this.configService.get<string>('KDNIAO_RECOGNIZE_REQUEST_TYPE') || '2002',
     };
   }
