@@ -434,6 +434,15 @@ const canRemoveCourseFileRow = (row: CourseFileRow) => {
 	return true;
 };
 
+const buildPaperExamProductName = () =>
+	[formState.value.school, formState.value.major]
+		.map((item) => String(item || '').trim())
+		.filter(Boolean)
+		.join('');
+
+const hasPaperExamProductNameFields = () =>
+	Boolean(String(formState.value.school || '').trim() && String(formState.value.major || '').trim());
+
 // 转换为级联选择器需要的格式
 const cascaderOptions = computed(() => {
 	return categoryTree.value
@@ -1198,6 +1207,14 @@ const handleOpenCoverConfig = () => {
 
 const handleSubmit = async () => {
 		try {
+			if (formState.value.content_type === 'paper_exam') {
+				const paperName = buildPaperExamProductName();
+				if (!paperName || !hasPaperExamProductNameFields()) {
+					message.warning('纸质专业真题需要填写学校和专业课代码');
+					return;
+				}
+				formState.value.name = paperName;
+			}
 			await formRef.value?.validate();
 			loading.value = true;
 			if (coverMode.value === 'auto') {
@@ -1207,7 +1224,9 @@ const handleSubmit = async () => {
 
 			// 构建符合后端 DTO 的数据
 		const submitData: any = {
-			name: formState.value.name,
+			name: formState.value.content_type === 'paper_exam'
+				? buildPaperExamProductName() || formState.value.name
+				: formState.value.name,
 		};
 
 		// 只添加有值的字段

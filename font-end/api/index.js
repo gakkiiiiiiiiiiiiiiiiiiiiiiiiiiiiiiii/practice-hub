@@ -163,6 +163,20 @@ export const invalidateActivationCode = (id) => {
 };
 
 /**
+ * 小程序超管录入纸质真题发货信息
+ */
+export const shipPaperExamOrder = (orderId, data) => {
+	return post(`/app/order/${orderId}/ship`, data);
+};
+
+/**
+ * 查询纸质真题订单物流信息
+ */
+export const queryOrderLogistics = (orderId) => {
+	return get(`/app/order/${orderId}/logistics`);
+};
+
+/**
  * 获取分销商购买的激活码列表
  * @param {Object} params - { page?: number, pageSize?: number, batch_id?: string, status?: number }
  */

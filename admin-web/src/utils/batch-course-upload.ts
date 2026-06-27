@@ -473,17 +473,7 @@ export function buildBatchGroupsByFilenameTemplate(
 }
 
 export function buildPaperExamCourseName(row: Pick<PaperExamExcelRow, 'school' | 'major' | 'exam_year' | 'answer_year'>) {
-	const base = [row.school, row.major].map((item) => String(item || '').trim()).filter(Boolean).join(' ');
-	const yearParts = [
-		row.exam_year ? `${row.exam_year}真题` : '',
-		row.answer_year
-			? row.answer_year === row.exam_year
-				? '含答案'
-				: `${row.answer_year}答案`
-			: '',
-	].filter(Boolean);
-	const suffix = yearParts.length ? `（${yearParts.join(' / ')}）` : '';
-	return `${base || '未命名'} 纸质专业真题${suffix}`;
+	return [row.school, row.major].map((item) => String(item || '').trim()).filter(Boolean).join('') || '未命名';
 }
 
 export function buildPaperExamGroupsFromRows(

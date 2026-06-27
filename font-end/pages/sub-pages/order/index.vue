@@ -30,9 +30,29 @@
           <text class="order-name">{{ order.productName }}</text>
           <text class="order-price">¥{{ order.amount }}</text>
         </view>
+        <view v-if="isPaperShippingOrder(order)" class="shipment-summary">
+          <text class="shipment-status" :class="order.deliveryStatus || 'pending'">
+            {{ getDeliveryStatusText(order.deliveryStatus) }}
+          </text>
+          <text v-if="order.trackingNo" class="shipment-no">{{ order.trackingNo }}</text>
+        </view>
         <view class="order-footer">
           <text class="order-time">{{ formatTime(order.createTime) }}</text>
           <view class="order-actions">
+            <button
+              v-if="canShipOrder(order)"
+              class="action-btn ship-btn"
+              @click.stop="handleOpenShip(order)"
+            >
+              {{ order.trackingNo ? '改运单' : '发货' }}
+            </button>
+            <button
+              v-if="isPaperShippingOrder(order) && order.trackingNo"
+              class="action-btn"
+              @click.stop="handleQueryLogistics(order)"
+            >
+              物流
+            </button>
             <button
               v-if="order.status === 'pending'"
               class="action-btn pay-btn"
@@ -84,6 +104,37 @@
           <view class="detail-item">
             <text class="detail-label">订单状态</text>
             <text class="detail-value">{{ getStatusText(detailOrder.status) }}</text>
+          </view>
+          <view v-if="isPaperShippingOrder(detailOrder)" class="shipment-block">
+            <view class="detail-item">
+              <text class="detail-label">发货状态</text>
+              <text class="detail-value">{{ getDeliveryStatusText(detailOrder.deliveryStatus) }}</text>
+            </view>
+            <view class="detail-item">
+              <text class="detail-label">运单号</text>
+              <text class="detail-value">{{ detailOrder.trackingNo || '-' }}</text>
+            </view>
+            <view class="detail-item">
+              <text class="detail-label">物流公司</text>
+              <text class="detail-value">{{ detailOrder.shipperName || detailOrder.shipperCode || '-' }}</text>
+            </view>
+            <view class="detail-item">
+              <text class="detail-label">收货地址</text>
+              <text class="detail-value multiline">{{ formatShippingAddress(detailOrder.shippingAddress) }}</text>
+            </view>
+            <view v-if="detailOrder.logisticsSnapshot?.message && !detailOrder.logisticsSnapshot?.success" class="shipment-message">
+              <text>{{ detailOrder.logisticsSnapshot.reason || detailOrder.logisticsSnapshot.message }}</text>
+            </view>
+            <view v-if="detailOrder.logisticsSnapshot?.traces?.length" class="logistics-list">
+              <view
+                v-for="(trace, index) in detailOrder.logisticsSnapshot.traces"
+                :key="`${trace.time}-${index}`"
+                class="logistics-item"
+              >
+                <text class="logistics-text">{{ trace.text || '-' }}</text>
+                <text class="logistics-time">{{ trace.time || '-' }}</text>
+              </view>
+            </view>
           </view>
           <view class="detail-item">
             <text class="detail-label">下单时间</text>
@@ -165,14 +216,69 @@
         </view>
       </view>
     </view>
+
+    <!-- 超管发货弹窗 -->
+    <view v-if="showShipModal" class="modal-mask" @click="showShipModal = false">
+      <view class="modal-content" @click.stop>
+        <view class="modal-header">
+          <text class="modal-title">{{ shipOrderTarget?.trackingNo ? '修改运单' : '录入发货' }}</text>
+          <view class="modal-close" @click="showShipModal = false">
+            <text>×</text>
+          </view>
+        </view>
+        <view class="modal-body">
+          <view class="form-item">
+            <text class="form-label">运单号 *</text>
+            <input
+              class="form-input"
+              v-model="shipForm.tracking_no"
+              placeholder="请输入物流运单号"
+              maxlength="80"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">物流公司编码</text>
+            <input
+              class="form-input"
+              v-model="shipForm.shipper_code"
+              placeholder="可选，留空时尝试自动识别"
+              maxlength="40"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">物流公司名称</text>
+            <input
+              class="form-input"
+              v-model="shipForm.shipper_name"
+              placeholder="可选，例如顺丰速运"
+              maxlength="80"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">备注</text>
+            <textarea
+              class="form-textarea short"
+              v-model="shipForm.remark"
+              placeholder="可选"
+              maxlength="255"
+            />
+          </view>
+        </view>
+        <view class="modal-footer">
+          <button class="modal-btn cancel-btn" @click="showShipModal = false">取消</button>
+          <button class="modal-btn submit-btn" @click="handleSubmitShip" :loading="shipping">保存</button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { get, post } from '@/utils/request'
 import { formatDate } from '@/utils/date'
-import { createAfterSale } from '@/api/index'
+import { createAfterSale, queryOrderLogistics, shipPaperExamOrder } from '@/api/index'
+import { useUserStore } from '@/store/user'
 import {
   blockVirtualPaymentIfNotReady,
   formatVirtualPaymentFailMessage,
@@ -185,17 +291,29 @@ const options = currentPage.options || {}
 const status = options.status || 'all'
 
 const currentTab = ref(status)
+const userStore = useUserStore()
 const orderList = ref([])
 const showAfterSaleModal = ref(false)
 const showDetailModal = ref(false)
+const showShipModal = ref(false)
 const detailOrder = ref(null)
 const currentOrder = ref(null)
 const submitting = ref(false)
+const shipping = ref(false)
+const shipOrderTarget = ref(null)
 const afterSaleForm = ref({
   wechat_contact: '',
   reason: '',
   description: '',
 })
+const shipForm = ref({
+  tracking_no: '',
+  shipper_code: '',
+  shipper_name: '',
+  remark: '',
+})
+
+const isAppAdmin = computed(() => userStore.userInfo?.is_admin === true || userStore.userInfo?.role === 'admin')
 
 const tabs = [
   { label: '全部', value: 'all' },
@@ -233,6 +351,29 @@ const getStatusText = (status) => {
     cancelled: '已取消'
   }
   return statusMap[status] || status
+}
+
+const getDeliveryStatusText = (status) => {
+  const statusMap = {
+    pending: '待发货',
+    shipped: '已发货',
+  }
+  return statusMap[status || 'pending'] || status || '待发货'
+}
+
+const isPaperShippingOrder = (order) => {
+  return !!(
+    order?.requiresShipping ||
+    order?.contentType === 'paper_exam' ||
+    order?.cartItems?.some?.((item) => item.contentType === 'paper_exam')
+  )
+}
+
+const canShipOrder = (order) => isAppAdmin.value && order?.status === 'paid' && isPaperShippingOrder(order)
+
+const formatShippingAddress = (address) => {
+  if (!address) return '-'
+  return [address.province, address.city, address.district, address.detail].filter(Boolean).join('') || '-'
 }
 
 const formatTime = (time) => {
@@ -285,6 +426,87 @@ const handlePay = async (order) => {
 const handleDetail = (order) => {
   detailOrder.value = order
   showDetailModal.value = true
+}
+
+const updateOrderInList = (orderId, patch) => {
+  orderList.value = orderList.value.map((item) => (item.id === orderId ? { ...item, ...patch } : item))
+  if (detailOrder.value?.id === orderId) {
+    detailOrder.value = { ...detailOrder.value, ...patch }
+  }
+}
+
+const handleOpenShip = (order) => {
+  shipOrderTarget.value = order
+  shipForm.value = {
+    tracking_no: order.trackingNo || '',
+    shipper_code: order.shipperCode || '',
+    shipper_name: order.shipperName || '',
+    remark: order.shipmentRemark || '',
+  }
+  showShipModal.value = true
+}
+
+const handleSubmitShip = async () => {
+  if (!shipOrderTarget.value) return
+  const trackingNo = shipForm.value.tracking_no.trim()
+  if (!trackingNo) {
+    uni.showToast({ title: '请输入运单号', icon: 'none' })
+    return
+  }
+
+  shipping.value = true
+  try {
+    const res = await shipPaperExamOrder(shipOrderTarget.value.id, {
+      tracking_no: trackingNo,
+      shipper_code: shipForm.value.shipper_code.trim() || undefined,
+      shipper_name: shipForm.value.shipper_name.trim() || undefined,
+      remark: shipForm.value.remark.trim() || undefined,
+    })
+    const logistics = res?.logistics
+    updateOrderInList(shipOrderTarget.value.id, {
+      deliveryStatus: res?.deliveryStatus || 'shipped',
+      trackingNo: res?.trackingNo || trackingNo,
+      shipperCode: res?.shipperCode || shipForm.value.shipper_code.trim(),
+      shipperName: res?.shipperName || shipForm.value.shipper_name.trim(),
+      shippedAt: res?.shippedAt,
+      shipmentRemark: shipForm.value.remark.trim(),
+      logisticsSnapshot: logistics,
+    })
+    uni.showToast({
+      title: logistics?.success === false ? '运单已保存' : '发货已保存',
+      icon: 'success',
+    })
+    showShipModal.value = false
+    loadOrders()
+  } catch (error) {
+    uni.showToast({
+      title: error.message || '保存失败',
+      icon: 'none',
+    })
+  } finally {
+    shipping.value = false
+  }
+}
+
+const handleQueryLogistics = async (order) => {
+  if (!order?.trackingNo) return
+  try {
+    const logistics = await queryOrderLogistics(order.id)
+    updateOrderInList(order.id, { logisticsSnapshot: logistics })
+    if (detailOrder.value?.id !== order.id) {
+      detailOrder.value = { ...order, logisticsSnapshot: logistics }
+    }
+    showDetailModal.value = true
+    uni.showToast({
+      title: logistics?.success === false ? '已刷新' : '物流已更新',
+      icon: 'success',
+    })
+  } catch (error) {
+    uni.showToast({
+      title: error.message || '查询失败',
+      icon: 'none',
+    })
+  }
 }
 
 const handleApplyAfterSale = (order) => {
@@ -461,6 +683,41 @@ const handleSubmitAfterSale = async () => {
   margin-bottom: $spacing-md;
 }
 
+.shipment-summary {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: $spacing-md;
+}
+
+.shipment-status {
+  flex-shrink: 0;
+  padding: 6rpx 14rpx;
+  border-radius: 6rpx;
+  font-size: 24rpx;
+  line-height: 1.3;
+
+  &.pending {
+    color: $warning-color;
+    background-color: rgba(243, 156, 18, 0.1);
+  }
+
+  &.shipped {
+    color: $success-color;
+    background-color: rgba(46, 204, 113, 0.1);
+  }
+}
+
+.shipment-no {
+  min-width: 0;
+  flex: 1;
+  font-size: 24rpx;
+  color: $text-color-secondary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .order-name {
   font-size: $font-size-base;
   font-weight: 500;
@@ -499,7 +756,10 @@ const handleSubmitAfterSale = async () => {
 .order-actions {
   display: flex;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: $spacing-sm;
+  max-width: 360rpx;
 }
 
 .action-btn {
@@ -519,6 +779,11 @@ const handleSubmitAfterSale = async () => {
   &.pay-btn {
     background-color: $primary-color;
     color: $white;
+  }
+
+  &.ship-btn {
+    background-color: #ecfdf5;
+    color: $success-color;
   }
 }
 
@@ -617,6 +882,10 @@ const handleSubmitAfterSale = async () => {
   font-size: 28rpx;
   background-color: #f9f9f9;
   box-sizing: border-box;
+
+  &.short {
+    min-height: 140rpx;
+  }
 }
 
 .modal-footer {
@@ -664,6 +933,59 @@ const handleSubmitAfterSale = async () => {
   margin-top: 8rpx;
   padding-top: 24rpx;
   border-top: 1rpx solid #f0f0f0;
+}
+
+.shipment-block {
+  margin-top: 8rpx;
+  padding-top: 24rpx;
+  border-top: 1rpx solid #f0f0f0;
+}
+
+.shipment-message {
+  padding: 18rpx 20rpx;
+  margin-bottom: 24rpx;
+  border-radius: 12rpx;
+  background-color: #fff7ed;
+  color: #b45309;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.logistics-list {
+  padding-left: 18rpx;
+  margin-bottom: 8rpx;
+  border-left: 2rpx solid #e5e7eb;
+}
+
+.logistics-item {
+  position: relative;
+  padding: 0 0 24rpx 24rpx;
+}
+
+.logistics-item::before {
+  content: '';
+  position: absolute;
+  left: -8rpx;
+  top: 10rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background-color: $primary-color;
+}
+
+.logistics-text {
+  display: block;
+  font-size: 26rpx;
+  color: #111827;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.logistics-time {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: $text-color-secondary;
 }
 
 .after-sale-title {
