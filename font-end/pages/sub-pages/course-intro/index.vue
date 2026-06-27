@@ -346,6 +346,7 @@ import {
 import { buildSharePath, getDefaultShare, toTimelineShare } from '@/utils/share';
 import { getCourseFileDisplayName, formatCouponThresholdDesc, formatYuanDisplay } from '@/utils/format';
 import { applyAutoCouponSelection } from '@/utils/coupon-select';
+import { chooseWechatShippingAddress, isPaperExamCourse as isPaperExamCourseType } from '@/utils/wechat-address';
 
 const bankStore = useBankStore();
 const userStore = useUserStore();
@@ -373,6 +374,7 @@ const pdfThumbSrcs = ref([]);
 const pdfThumbLoading = ref(false);
 
 const isFileCourse = computed(() => courseInfo.value && courseInfo.value.content_type === 'file');
+const isPaperExamCourse = computed(() => isPaperExamCourseType(courseInfo.value));
 const courseFileList = computed(() => {
 	const course = courseInfo.value;
 	if (!course) return [];
@@ -441,6 +443,7 @@ const payAmount = computed(() => {
 const courseValidityText = computed(() => {
 	const course = courseInfo.value;
 	if (!course || Number(course.is_free) === 1 || Number(course.price || 0) <= 0) return '';
+	if (isPaperExamCourse.value) return '';
 	if (hasAuth.value) {
 		const expireTime = course.expireTime || course.expire_time;
 		if (!expireTime) return '永久有效';
@@ -525,13 +528,16 @@ const loadCourseInfo = async () => {
 };
 
 const primaryActionLoading = computed(() => buyLoading.value || embedLoading.value || fileOpening.value);
-const isPrimaryActionDisabled = computed(() => primaryActionLoading.value);
+const isPrimaryActionDisabled = computed(() => primaryActionLoading.value || (isPaperExamCourse.value && hasAuth.value));
 const primaryActionText = computed(() => {
 	const course = courseInfo.value;
 	if (!course) return '立即购买';
 	if (!hasAuth.value && Number(course.price) > 0) {
 		if (buyLoading.value) return '支付中...';
 		return '立即购买';
+	}
+	if (isPaperExamCourse.value) {
+		return hasAuth.value ? '已购买' : '立即购买';
 	}
 	if (isFileCourse.value) {
 		return primaryActionLoading.value ? '打开中...' : '查看资料';
@@ -682,6 +688,10 @@ const handlePrimaryAction = () => {
 		handleBuy();
 		return;
 	}
+	if (isPaperExamCourse.value) {
+		uni.showToast({ title: '已购买，等待发货', icon: 'none' });
+		return;
+	}
 	if (isFileCourse.value) {
 		if (isPdfFileType.value) {
 			handleEmbedPreview();
@@ -771,9 +781,11 @@ const handleBuy = async () => {
 
 	try {
 		buyLoading.value = true;
+		const shippingAddress = isPaperExamCourse.value ? await chooseWechatShippingAddress() : null;
 		const order = await createOrder({
 			course_id: courseId.value,
 			...(selectedCouponId.value ? { coupon_id: selectedCouponId.value } : {}),
+			...(shippingAddress ? { shipping_address: shippingAddress } : {}),
 		});
 
 		if (!order?.payment_params) {

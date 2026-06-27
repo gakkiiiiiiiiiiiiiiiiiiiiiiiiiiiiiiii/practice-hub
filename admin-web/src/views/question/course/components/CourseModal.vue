@@ -15,9 +15,13 @@
 				<a-radio-group v-model:value="formState.content_type">
 					<a-radio value="normal" :disabled="isEditingExistingFileCourseWithoutAdmin">普通题库（章节+题目）</a-radio>
 					<a-radio value="file">文件课程（PDF/Word 直接查看）</a-radio>
+					<a-radio value="paper_exam" :disabled="isEditingExistingFileCourseWithoutAdmin">纸质专业真题</a-radio>
 				</a-radio-group>
+				<div v-if="isPaperExamCourse" class="form-tip">
+					纸质专业真题为实物发货课程，购买时小程序会要求用户选择微信收货地址。
+				</div>
 				<div v-if="isEditingExistingFileCourseWithoutAdmin" class="form-tip">
-					当前账号不能删除已有课程文件，因此不能将文件课程改为普通题库。
+					当前账号不能删除已有课程文件，因此不能将文件课程改为其他类型。
 				</div>
 			</a-form-item>
 			<a-form-item v-if="formState.content_type === 'file'" label="课程文件" name="course_files">
@@ -182,11 +186,11 @@
 				<a-button type="link" class="extra-fields-toggle" @click="extraFieldsExpanded = !extraFieldsExpanded">
 					<template v-if="extraFieldsExpanded">
 						<up-outlined />
-						收起学校 / 专业 / 真题年份 / 答案年份
+						收起学校 / {{ isPaperExamCourse ? '专业课代码' : '专业' }} / 真题年份 / 答案年份
 					</template>
 					<template v-else>
 						<down-outlined />
-						展开学校 / 专业 / 真题年份 / 答案年份
+						展开学校 / {{ isPaperExamCourse ? '专业课代码' : '专业' }} / 真题年份 / 答案年份
 					</template>
 				</a-button>
 			</a-form-item>
@@ -194,8 +198,11 @@
 				<a-form-item label="学校" name="school">
 					<a-input v-model:value="formState.school" placeholder="请输入学校（如：北京大学等）" />
 				</a-form-item>
-				<a-form-item label="专业" name="major">
-					<a-input v-model:value="formState.major" placeholder="请输入专业（如：计算机科学与技术等）" />
+				<a-form-item :label="isPaperExamCourse ? '专业课代码' : '专业'" name="major">
+					<a-input
+						v-model:value="formState.major"
+						:placeholder="isPaperExamCourse ? '请输入专业课代码（如：408）' : '请输入专业（如：计算机科学与技术等）'"
+					/>
 				</a-form-item>
 				<a-form-item label="真题年份" name="exam_year">
 					<a-input v-model:value="formState.exam_year" placeholder="请输入真题年份（如：2024）" />
@@ -270,7 +277,7 @@
 					<a-radio :value="1">免费</a-radio>
 				</a-radio-group>
 			</a-form-item>
-			<a-form-item v-if="formState.is_free === 0" label="有效期设置" name="validity_days">
+			<a-form-item v-if="formState.is_free === 0 && !isPaperExamCourse" label="有效期设置" name="validity_days">
 				<a-radio-group v-model:value="formState.validity_days">
 					<a-radio :value="30">30天</a-radio>
 					<a-radio :value="90">90天</a-radio>
@@ -414,6 +421,7 @@ const showCoursePreviewSamples = computed(
 		formState.value.content_type === 'file' &&
 		previewableCourseFiles.value.some((row) => row.id),
 );
+const isPaperExamCourse = computed(() => formState.value.content_type === 'paper_exam');
 const canDownloadCourseFile = computed(() => userStore.hasRole('super_admin'));
 const canRemoveCourseFile = computed(() => !props.record || userStore.hasRole('super_admin'));
 const isEditingExistingFileCourseWithoutAdmin = computed(
@@ -764,9 +772,29 @@ watch(
 	);
 
 	watch(
+		() => formState.value.content_type,
+		(value, oldValue) => {
+			if (value === 'paper_exam') {
+				formState.value.is_free = 0;
+				formState.value.validity_days = null;
+				formState.value.allow_source_file = 0;
+				if (!formState.value.price || Number(formState.value.price) <= 1) {
+					formState.value.price = 80;
+				}
+				if (oldValue === 'file') {
+					courseFileRows.value = [];
+					syncPrimaryFromRows();
+				}
+			} else if (oldValue === 'paper_exam' && formState.value.is_free === 0 && formState.value.validity_days == null) {
+				formState.value.validity_days = 365;
+			}
+		},
+	);
+
+	watch(
 		() => formState.value.is_free,
 		(isFree) => {
-			if (isFree === 0 && formState.value.validity_days == null) {
+			if (isFree === 0 && formState.value.content_type !== 'paper_exam' && formState.value.validity_days == null) {
 				formState.value.validity_days = 365;
 			}
 		},
@@ -1216,8 +1244,12 @@ const handleSubmit = async () => {
 		if (formState.value.is_free !== undefined) {
 			submitData.is_free = formState.value.is_free;
 		}
-		// 只有付费课程才设置有效期
-		if (formState.value.is_free === 0) {
+		submitData.content_type = formState.value.content_type || 'normal';
+		// 只有付费课程才设置有效期；纸质真题为实物发货，购买记录永久保留
+		if (submitData.content_type === 'paper_exam') {
+			submitData.validity_days = null;
+			submitData.is_free = 0;
+		} else if (formState.value.is_free === 0) {
 			if (formState.value.validity_days !== undefined) {
 				submitData.validity_days = formState.value.validity_days;
 			}
@@ -1228,7 +1260,6 @@ const handleSubmit = async () => {
 			if (formState.value.introduction !== undefined) {
 			submitData.introduction = formState.value.introduction;
 		}
-		submitData.content_type = formState.value.content_type || 'normal';
 		if (isEditingExistingFileCourseWithoutAdmin.value) {
 			submitData.content_type = 'file';
 			if (!formState.value.file_url) {

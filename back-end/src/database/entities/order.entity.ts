@@ -7,6 +7,18 @@ export enum OrderStatus {
 	AFTER_SALE = 'after_sale', // 售后
 }
 
+export type OrderShippingAddress = {
+	name: string;
+	phone: string;
+	province: string;
+	city: string;
+	district: string;
+	detail: string;
+	postalCode?: string;
+	nationalCode?: string;
+	raw?: Record<string, any>;
+};
+
 @Entity('order')
 export class Order {
 	@PrimaryGeneratedColumn()
@@ -54,6 +66,9 @@ export class Order {
 
 	@Column({ type: 'json', nullable: true })
 	pay_payload: Record<string, any> | null;
+
+	@Column({ type: 'json', nullable: true, comment: '实物订单收货地址' })
+	shipping_address: OrderShippingAddress | null;
 
 	@Column({ type: 'datetime', nullable: true })
 	paid_time: Date | null;

@@ -23,7 +23,7 @@
 					<image class="cart-cover" :src="getCover(item.coverImg)" mode="aspectFill" @click="goCourse(item.courseId)" />
 					<view class="cart-info" @click="goCourse(item.courseId)">
 						<text class="cart-name">{{ item.name }}</text>
-						<text class="cart-type">{{ item.contentType === 'file' ? '资料课程' : '题库课程' }}</text>
+						<text class="cart-type">{{ formatCourseTypeLabel(item.contentType) }}</text>
 						<text class="cart-price">¥{{ item.price }}</text>
 					</view>
 					<text class="cart-remove" @click="removeItem(item.courseId)">删除</text>
@@ -101,6 +101,11 @@ import { getApiBaseUrl } from '@/utils/api-base'
 import { formatCouponThresholdDesc, formatYuanDisplay } from '@/utils/format'
 import { applyAutoCouponSelection } from '@/utils/coupon-select'
 import {
+	chooseWechatShippingAddress,
+	formatCourseTypeLabel,
+	PAPER_EXAM_CONTENT_TYPE,
+} from '@/utils/wechat-address'
+import {
 	blockVirtualPaymentIfNotReady,
 	formatVirtualPaymentFailMessage,
 	invokeVirtualPayment,
@@ -133,6 +138,9 @@ const discountAmount = computed(() => {
 const payAmount = computed(() => Math.max(0, selectedTotal.value - discountAmount.value))
 
 const showCouponPicker = computed(() => userStore.isLoggedIn && selectedTotal.value > 0)
+const selectedHasPaperExam = computed(() =>
+	cartStore.selectedItems.some((item) => item.contentType === PAPER_EXAM_CONTENT_TYPE),
+)
 
 const selectedCouponLabel = computed(() => {
 	if (selectedCoupon.value) {
@@ -246,9 +254,11 @@ const handleCheckout = async () => {
 	const courseIds = cartStore.selectedItems.map((item) => item.courseId)
 	checkoutLoading.value = true
 	try {
+		const shippingAddress = selectedHasPaperExam.value ? await chooseWechatShippingAddress() : null
 		const order = await createCartOrder({
 			course_ids: courseIds,
 			...(selectedCouponId.value ? { coupon_id: selectedCouponId.value } : {}),
+			...(shippingAddress ? { shipping_address: shippingAddress } : {}),
 		})
 
 		if (!order?.payment_params) {

@@ -140,6 +140,15 @@
 						<a-tag :color="getStatusColor(currentRecord.status)">{{ getStatusLabel(currentRecord.status) }}</a-tag>
 					</a-descriptions-item>
 					<a-descriptions-item label="购买内容" :span="2">{{ currentRecord.productName }}</a-descriptions-item>
+					<a-descriptions-item v-if="currentRecord.shippingAddress" label="收货人">
+						{{ currentRecord.shippingAddress.name || '-' }}
+					</a-descriptions-item>
+					<a-descriptions-item v-if="currentRecord.shippingAddress" label="收货电话">
+						{{ currentRecord.shippingAddress.phone || '-' }}
+					</a-descriptions-item>
+					<a-descriptions-item v-if="currentRecord.shippingAddress" label="收货地址" :span="2">
+						{{ formatShippingAddress(currentRecord.shippingAddress) }}
+					</a-descriptions-item>
 					<a-descriptions-item label="实付金额">¥{{ formatAmount(currentRecord.amount) }}</a-descriptions-item>
 					<a-descriptions-item label="原价">
 						{{ currentRecord.originalAmount != null ? `¥${formatAmount(currentRecord.originalAmount)}` : '-' }}
@@ -191,6 +200,9 @@
 					>
 						<template #bodyCell="{ column, record }">
 							<template v-if="column.key === 'price'">¥{{ formatAmount(record.price) }}</template>
+							<template v-else-if="column.key === 'contentType'">
+								<a-tag>{{ getCartItemTypeLabel(record.contentType) }}</a-tag>
+							</template>
 						</template>
 					</a-table>
 				</div>
@@ -274,8 +286,21 @@ const columns = [
 const cartColumns = [
 	{ title: '课程ID', dataIndex: 'courseId', key: 'courseId', width: 100 },
 	{ title: '课程名称', dataIndex: 'name', key: 'name' },
+	{ title: '类型', key: 'contentType', width: 110 },
 	{ title: '价格', key: 'price', width: 100 },
 ]
+
+const getCartItemTypeLabel = (contentType?: string) => {
+	if (contentType === 'file') return '文件课程'
+	if (contentType === 'paper_exam') return '纸质真题'
+	return '普通题库'
+}
+
+const formatShippingAddress = (address: any) => {
+	if (!address) return '-'
+	const detail = [address.province, address.city, address.district, address.detail].filter(Boolean).join('')
+	return detail || address.fullAddress || '-'
+}
 
 const fetchData = async () => {
 	loading.value = true

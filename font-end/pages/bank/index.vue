@@ -1171,15 +1171,22 @@ const fetchSubjectsList = async () => {
 	try {
 		const subjectsList = await getAllCourses();
 		if (subjectsList && subjectsList.length > 0) {
-			const processedList = subjectsList.map((subject) => ({
-				...subject,
-				hasAuth:
-					subject.hasAuth === true ||
-					subject.hasAuth === 1 ||
-					subject.is_free === 1 ||
-					Number(subject.price) === 0 ||
-					!subject.price,
-			}));
+			const processedList = subjectsList
+				.filter((subject) => subject.content_type !== 'paper_exam')
+				.map((subject) => ({
+					...subject,
+					hasAuth:
+						subject.hasAuth === true ||
+						subject.hasAuth === 1 ||
+						subject.is_free === 1 ||
+						Number(subject.price) === 0 ||
+						!subject.price,
+				}));
+			if (processedList.length === 0) {
+				allSubjects.value = [];
+				currentSubject.value = { id: null, name: '暂无题库' };
+				return;
+			}
 
 			// 保存所有课程（未筛选）
 			allSubjects.value = processedList.map((subject) => ({

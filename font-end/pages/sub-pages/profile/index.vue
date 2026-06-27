@@ -120,6 +120,7 @@
 								<text v-if="course.category" class="course-tag">{{ course.category }}</text>
 								<text v-if="course.sub_category" class="course-tag">{{ course.sub_category }}</text>
 								<text v-if="course.content_type === 'file'" class="course-tag file-tag">文件课</text>
+								<text v-if="course.content_type === 'paper_exam'" class="course-tag paper-tag">纸质真题</text>
 							</view>
 							<text v-if="course.expireTime" class="course-expire">{{ formatVipExpire(course.expireTime) }}</text>
 						</view>
@@ -641,6 +642,11 @@ const formatVipExpire = (expireTime) => {
 .file-tag {
 	background: rgba(16, 185, 129, 0.12);
 	color: #10b981;
+}
+
+.paper-tag {
+	background: rgba(249, 115, 22, 0.12);
+	color: #c2410c;
 }
 
 .course-expire {

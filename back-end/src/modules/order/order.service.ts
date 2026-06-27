@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import * as https from 'https';
 import axios from 'axios';
-import { Order, OrderStatus } from '../../database/entities/order.entity';
+import { Order, OrderShippingAddress, OrderStatus } from '../../database/entities/order.entity';
 import { Course } from '../../database/entities/course.entity';
 import { AppUser } from '../../database/entities/app-user.entity';
 import { UserCourseAuth, AuthSource } from '../../database/entities/user-course-auth.entity';
@@ -71,7 +71,8 @@ export class OrderService {
       throw new NotFoundException('部分课程不存在或已下架');
     }
 
-    const cartItems: Array<{ course_id: number; name: string; price: number }> = [];
+    const shippingAddress = this.resolveShippingAddressForCourses(courses, dto.shipping_address);
+    const cartItems: Array<{ course_id: number; name: string; price: number; content_type: string }> = [];
     let originalAmount = 0;
 
     for (const courseId of courseIds) {
@@ -101,6 +102,7 @@ export class OrderService {
         course_id: course.id,
         name: course.name || '课程',
         price,
+        content_type: course.content_type || 'normal',
       });
       originalAmount += price;
     }
@@ -132,6 +134,7 @@ export class OrderService {
         coupon_id: couponId,
         status: OrderStatus.PENDING,
         pay_provider: 'free',
+        shipping_address: shippingAddress,
         pay_payload: {
           is_cart: true,
           cart_items: cartItems,
@@ -165,6 +168,7 @@ export class OrderService {
       coupon_id: couponId,
       status: OrderStatus.PENDING,
       pay_provider: 'virtual_payment',
+      shipping_address: shippingAddress,
       pay_payload: {
         is_cart: true,
         cart_items: cartItems,
@@ -197,6 +201,7 @@ export class OrderService {
     if (!course) {
       throw new NotFoundException('课程不存在');
     }
+    const shippingAddress = this.resolveShippingAddressForCourses([course], dto.shipping_address);
 
     const originalAmount = Number(course.price || 0);
     if (course.is_free !== 1 && originalAmount > 0) {
@@ -225,6 +230,7 @@ export class OrderService {
         coupon_id: couponId,
         status: OrderStatus.PENDING,
         pay_provider: 'free',
+        shipping_address: shippingAddress,
       });
       await this.orderRepository.save(freeOrder);
       await this.handlePaymentSuccess(freeOrder.id);
@@ -256,6 +262,7 @@ export class OrderService {
       coupon_id: couponId,
       status: OrderStatus.PENDING,
       pay_provider: 'virtual_payment',
+      shipping_address: shippingAddress,
     });
 
     await this.orderRepository.save(order);
@@ -309,6 +316,68 @@ export class OrderService {
       existingAuth.expire_time = expireTime;
       await this.userCourseAuthRepository.save(existingAuth);
     }
+  }
+
+  private resolveShippingAddressForCourses(
+    courses: Array<Pick<Course, 'content_type' | 'name'>>,
+    input?: Record<string, any>,
+  ): OrderShippingAddress | null {
+    const hasPaperExamCourse = courses.some((course) => course.content_type === 'paper_exam');
+    if (!hasPaperExamCourse) {
+      return input ? this.normalizeShippingAddress(input, false) : null;
+    }
+    return this.normalizeShippingAddress(input, true);
+  }
+
+  private normalizeShippingAddress(input: Record<string, any> | undefined, required: boolean): OrderShippingAddress | null {
+    if (!input || typeof input !== 'object') {
+      if (required) {
+        throw new BadRequestException('纸质专业真题需要填写收货地址');
+      }
+      return null;
+    }
+
+    const normalized: OrderShippingAddress = {
+      name: this.pickString(input, ['name', 'userName', 'receiverName', 'contactName']),
+      phone: this.pickString(input, ['phone', 'telNumber', 'mobile', 'contactPhone']),
+      province: this.pickString(input, ['province', 'provinceName']),
+      city: this.pickString(input, ['city', 'cityName']),
+      district: this.pickString(input, ['district', 'countyName', 'area']),
+      detail: this.pickString(input, ['detail', 'detailInfo', 'addressDetail']),
+      postalCode: this.pickString(input, ['postalCode', 'postCode']),
+      nationalCode: this.pickString(input, ['nationalCode']),
+      raw: input,
+    };
+
+    if (required) {
+      const missing = [
+        ['name', normalized.name],
+        ['phone', normalized.phone],
+        ['province', normalized.province],
+        ['city', normalized.city],
+        ['district', normalized.district],
+        ['detail', normalized.detail],
+      ].filter(([, value]) => !value);
+      if (missing.length > 0) {
+        throw new BadRequestException('收货地址不完整，请重新选择微信收货地址');
+      }
+    }
+
+    if (!normalized.name && !normalized.phone && !normalized.detail) {
+      return null;
+    }
+    return normalized;
+  }
+
+  private pickString(input: Record<string, any>, keys: string[]) {
+    for (const key of keys) {
+      const value = input[key];
+      if (value !== undefined && value !== null) {
+        const text = String(value).trim();
+        if (text) return text;
+      }
+    }
+    return '';
   }
 
   private async createPackageOrder(userId: number, dto: CreateOrderDto, clientIp?: string) {
@@ -1334,6 +1403,7 @@ export class OrderService {
         'o.create_time AS createTime',
         'o.paid_time AS paidTime',
         'o.pay_payload AS payPayload',
+        'o.shipping_address AS shippingAddress',
         'course.name AS courseName',
         'course.cover_img AS coverImg',
         'course.content_type AS contentType',
@@ -1386,6 +1456,7 @@ export class OrderService {
         paidTime: row.paidTime,
         isCart: cartCount > 1,
         cartCount,
+        shippingAddress: this.parseJsonColumn(row.shippingAddress),
         afterSale: this.formatAfterSaleInfo(afterSaleMap.get(Number(row.id))),
       };
     });
@@ -1583,6 +1654,7 @@ export class OrderService {
         'o.coupon_id AS couponId',
         'o.pay_provider AS payProvider',
         'o.pay_payload AS payPayload',
+        'o.shipping_address AS shippingAddress',
         'o.create_time AS createTime',
         'o.paid_time AS paidTime',
         'course.name AS courseName',
@@ -1613,6 +1685,7 @@ export class OrderService {
           courseId: Number(item.course_id || item.courseId || 0),
           name: item.name || '课程',
           price: Number(item.price || 0),
+          contentType: item.content_type || item.contentType || 'normal',
         }))
       : [];
 
@@ -1650,6 +1723,7 @@ export class OrderService {
       wechatRechargeOrderNo: payPayload?.coin_purchase?.recharge_order_no || '',
       refunded: Boolean(payPayload?.refund?.refunded_at),
       refundRemark: payPayload?.refund?.remark || '',
+      shippingAddress: this.parseJsonColumn(row.shippingAddress),
       afterSale: this.formatAfterSaleInfo(afterSale),
       productName,
       cartItems,
@@ -1684,6 +1758,7 @@ export class OrderService {
         'o.coupon_id AS couponId',
         'o.pay_provider AS payProvider',
         'o.pay_payload AS payPayload',
+        'o.shipping_address AS shippingAddress',
         'o.create_time AS createTime',
         'o.paid_time AS paidTime',
         'course.name AS courseName',
@@ -1735,5 +1810,17 @@ export class OrderService {
       page,
       pageSize,
     };
+  }
+
+  private parseJsonColumn(value: any) {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch (_) {
+        return null;
+      }
+    }
+    return value;
   }
 }

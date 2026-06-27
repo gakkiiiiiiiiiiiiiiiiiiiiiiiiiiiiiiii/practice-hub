@@ -1981,8 +1981,8 @@ const handleCourseClick = async (course) => {
 				console.error('获取课程类型失败:', e);
 			}
 		}
-		// 文件类型课程（PDF/Word）始终进课程介绍页，不进练习页
-		if (contentType === 'file') {
+		// 文件课程和纸质真题始终进课程介绍页，不进练习页
+		if (contentType === 'file' || contentType === 'paper_exam') {
 			uni.navigateTo({
 				url: `/pages/sub-pages/course-intro/index?id=${course.id}`,
 			});
