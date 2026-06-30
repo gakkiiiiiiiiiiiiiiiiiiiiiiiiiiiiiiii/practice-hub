@@ -27,20 +27,21 @@
 			</view>
 			<view
 				v-if="showCategoryBundleEntry"
-				class="category-bundle-card"
+				class="category-bundle-strip"
 				:class="{ owned: categoryBundleInfo.hasPurchasedAll }"
 				@click="handleBuyCategoryBundle"
 			>
 				<view class="category-bundle-main">
 					<text class="category-bundle-title">{{ categoryBundleTitle }}</text>
-					<text class="category-bundle-desc">{{ categoryBundleDesc }}</text>
+					<text class="category-bundle-status">{{ categoryBundleStatusText }}</text>
 				</view>
 				<view
-					class="category-bundle-action"
+					class="category-bundle-price"
 					:class="{ disabled: categoryBundleInfo.hasPurchasedAll || categoryBundleBuying }"
 					@click.stop="handleBuyCategoryBundle"
 				>
-					<text>{{ categoryBundleActionText }}</text>
+					<text class="category-bundle-price__amount">{{ categoryBundlePriceText }}</text>
+					<text class="category-bundle-price__status">{{ categoryBundleActionText }}</text>
 				</view>
 			</view>
 		</view>
@@ -240,7 +241,7 @@ const showCategoryBundleEntry = computed(() => {
 	return !!(info?.available && Number(info.courseCount || 0) > 0);
 });
 
-const categoryBundleExtraHeight = computed(() => (showCategoryBundleEntry.value ? 120 : 0));
+const categoryBundleExtraHeight = computed(() => (showCategoryBundleEntry.value ? 78 : 0));
 
 const filterBarStyle = computed(() => ({
 	top: `${navbarMetrics.value.height + uni.upx2px(104 + categoryBundleExtraHeight.value)}px`,
@@ -265,17 +266,23 @@ const categoryBundleTitle = computed(() => {
 	return `${name}全部课程`;
 });
 
-const categoryBundleDesc = computed(() => {
+const categoryBundleStatusText = computed(() => {
 	const info = categoryBundleInfo.value || {};
 	const courseCount = Number(info.courseCount || 0);
 	const purchasedCount = Number(info.purchasedCount || 0);
 	if (info.hasPurchasedAll) {
-		return `已拥有该分类下 ${courseCount} 门课程`;
+		return `已购买 · ${courseCount} 门可学`;
 	}
 	if (purchasedCount > 0) {
-		return `共 ${courseCount} 门，已拥有 ${purchasedCount} 门，购买后解锁剩余课程`;
+		return `未全购 · ${purchasedCount}/${courseCount} 门已拥有`;
 	}
-	return `一键解锁当前分类 ${courseCount} 门课程`;
+	return `未购买 · ${courseCount} 门课程`;
+});
+
+const categoryBundlePriceText = computed(() => {
+	const info = categoryBundleInfo.value || {};
+	const price = Number(info.price ?? 30);
+	return price > 0 ? `¥${price.toFixed(0)}` : '免费';
 });
 
 const categoryBundleActionText = computed(() => {
@@ -283,8 +290,7 @@ const categoryBundleActionText = computed(() => {
 	if (categoryBundleBuying.value) return '处理中';
 	if (categoryBundleLoading.value) return '加载中';
 	if (info.hasPurchasedAll) return '已拥有';
-	const price = Number(info.price ?? 30);
-	return price > 0 ? `¥${price.toFixed(0)} 购买` : '免费开通';
+	return Number(info.price ?? 30) > 0 ? '购买合集' : '立即开通';
 });
 
 const initNavbarMetrics = () => {
@@ -687,17 +693,17 @@ $theme-color-light: #60A5FA;
 	flex-shrink: 0;
 }
 
-.category-bundle-card {
-	margin-top: 16rpx;
-	min-height: 104rpx;
-	padding: 18rpx 20rpx;
-	border-radius: 20rpx;
-	background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(255, 90, 31, 0.08));
-	border: 1rpx solid rgba(37, 99, 235, 0.12);
+.category-bundle-strip {
+	margin-top: 12rpx;
+	height: 66rpx;
+	padding: 0 10rpx 0 18rpx;
+	border-radius: 14rpx;
+	background: #f8fafc;
+	border: 1rpx solid #e6edf5;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 16rpx;
+	gap: 12rpx;
 	box-sizing: border-box;
 
 	&.owned {
@@ -710,35 +716,35 @@ $theme-color-light: #60A5FA;
 	flex: 1;
 	min-width: 0;
 	display: flex;
-	flex-direction: column;
-	gap: 6rpx;
+	align-items: center;
+	gap: 10rpx;
 }
 
 .category-bundle-title {
-	font-size: 28rpx;
-	line-height: 1.35;
+	max-width: 280rpx;
+	font-size: 25rpx;
+	line-height: 1;
 	font-weight: 700;
 	color: $text-primary;
 	@include truncate;
 }
 
-.category-bundle-desc {
-	font-size: 22rpx;
-	line-height: 1.35;
+.category-bundle-status {
+	max-width: 220rpx;
+	font-size: 21rpx;
+	line-height: 1;
 	color: #6b7280;
 	@include truncate;
 }
 
-.category-bundle-action {
-	min-width: 144rpx;
-	height: 58rpx;
-	padding: 0 18rpx;
-	border-radius: 999rpx;
+.category-bundle-price {
+	width: 144rpx;
+	height: 50rpx;
+	border-radius: 12rpx;
 	background: #ff5a1f;
 	color: #fff;
-	font-size: 24rpx;
-	font-weight: 700;
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
 	flex-shrink: 0;
@@ -748,6 +754,19 @@ $theme-color-light: #60A5FA;
 		background: rgba(107, 114, 128, 0.16);
 		color: #6b7280;
 	}
+}
+
+.category-bundle-price__amount {
+	font-size: 24rpx;
+	line-height: 1;
+	font-weight: 800;
+}
+
+.category-bundle-price__status {
+	margin-top: 4rpx;
+	font-size: 18rpx;
+	line-height: 1;
+	font-weight: 600;
 }
 
 .filter-bar {
