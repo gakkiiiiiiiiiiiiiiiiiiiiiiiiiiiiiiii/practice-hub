@@ -409,6 +409,10 @@ export const getAllCourses = (params = {}) => {
 	return get('/app/courses', params);
 };
 
+export const getCategoryBundleInfo = (params = {}) => {
+	return get('/app/courses/category-bundle', params);
+};
+
 export const getCourseTypes = () => {
 	return get('/app/course-types');
 };

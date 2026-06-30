@@ -25,6 +25,24 @@
 					<app-icon name="close" :size="24" color="#9ca3af" />
 				</view>
 			</view>
+			<view
+				v-if="showCategoryBundleEntry"
+				class="category-bundle-card"
+				:class="{ owned: categoryBundleInfo.hasPurchasedAll }"
+				@click="handleBuyCategoryBundle"
+			>
+				<view class="category-bundle-main">
+					<text class="category-bundle-title">{{ categoryBundleTitle }}</text>
+					<text class="category-bundle-desc">{{ categoryBundleDesc }}</text>
+				</view>
+				<view
+					class="category-bundle-action"
+					:class="{ disabled: categoryBundleInfo.hasPurchasedAll || categoryBundleBuying }"
+					@click.stop="handleBuyCategoryBundle"
+				>
+					<text>{{ categoryBundleActionText }}</text>
+				</view>
+			</view>
 		</view>
 
 		<!-- 排序筛选栏 -->
@@ -133,10 +151,21 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import { onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app';
-import { getAllCourses, getCourseTypes } from '@/api/index';
+import {
+	getAllCourses,
+	getCategoryBundleInfo,
+	getCourseTypes,
+	createOrder,
+	confirmWechatPayment,
+} from '@/api/index';
 import { useUserStore } from '@/store/user';
 import { getImageUrl } from '@/utils/image';
 import { buildSharePath, getDefaultShare, toTimelineShare } from '@/utils/share';
+import {
+	blockVirtualPaymentIfNotReady,
+	formatVirtualPaymentFailMessage,
+	invokeVirtualPayment,
+} from '@/utils/virtual-payment';
 
 const userStore = useUserStore();
 
@@ -173,6 +202,9 @@ const typeDropdownOpen = ref(false);
 const courseTypes = ref([]);
 const selectedCourseTypeId = ref(null);
 const selectedCourseTypeName = ref('');
+const categoryBundleInfo = ref(null);
+const categoryBundleLoading = ref(false);
+const categoryBundleBuying = ref(false);
 
 // 课程列表
 const courseList = ref([]);
@@ -203,8 +235,15 @@ const headerTitleStyle = computed(() => ({
 	maxWidth: `calc(100% - ${Math.max(176, navbarMetrics.value.rightSafeWidth * 2)}px)`,
 }));
 
+const showCategoryBundleEntry = computed(() => {
+	const info = categoryBundleInfo.value;
+	return !!(info?.available && Number(info.courseCount || 0) > 0);
+});
+
+const categoryBundleExtraHeight = computed(() => (showCategoryBundleEntry.value ? 120 : 0));
+
 const filterBarStyle = computed(() => ({
-	top: `${navbarMetrics.value.height + uni.upx2px(104)}px`,
+	top: `${navbarMetrics.value.height + uni.upx2px(104 + categoryBundleExtraHeight.value)}px`,
 }));
 
 const searchSectionStyle = computed(() => ({
@@ -212,12 +251,40 @@ const searchSectionStyle = computed(() => ({
 }));
 
 const courseListContainerStyle = computed(() => ({
-	height: `calc(100vh - ${navbarMetrics.value.height}px - 192rpx)`,
+	height: `calc(100vh - ${navbarMetrics.value.height}px - ${192 + categoryBundleExtraHeight.value}rpx)`,
 }));
 
 const currentSortLabel = computed(() => {
 	if (currentSort.value === 'sales') return '销量';
 	return sortOptions.find((item) => item.value === currentSort.value)?.label || '综合';
+});
+
+const categoryBundleTitle = computed(() => {
+	const info = categoryBundleInfo.value || {};
+	const name = info.subCategory || info.categoryName || subCategory.value || categoryName.value || '当前分类';
+	return `${name}全部课程`;
+});
+
+const categoryBundleDesc = computed(() => {
+	const info = categoryBundleInfo.value || {};
+	const courseCount = Number(info.courseCount || 0);
+	const purchasedCount = Number(info.purchasedCount || 0);
+	if (info.hasPurchasedAll) {
+		return `已拥有该分类下 ${courseCount} 门课程`;
+	}
+	if (purchasedCount > 0) {
+		return `共 ${courseCount} 门，已拥有 ${purchasedCount} 门，购买后解锁剩余课程`;
+	}
+	return `一键解锁当前分类 ${courseCount} 门课程`;
+});
+
+const categoryBundleActionText = computed(() => {
+	const info = categoryBundleInfo.value || {};
+	if (categoryBundleBuying.value) return '处理中';
+	if (categoryBundleLoading.value) return '加载中';
+	if (info.hasPurchasedAll) return '已拥有';
+	const price = Number(info.price ?? 30);
+	return price > 0 ? `¥${price.toFixed(0)} 购买` : '免费开通';
 });
 
 const initNavbarMetrics = () => {
@@ -311,6 +378,83 @@ const fetchCourseList = async (reset = false) => {
 		});
 	} finally {
 		loading.value = false;
+	}
+};
+
+const fetchCategoryBundleInfo = async () => {
+	if (!category.value && !subCategory.value) {
+		categoryBundleInfo.value = null;
+		return;
+	}
+	categoryBundleLoading.value = true;
+	try {
+		const res = await getCategoryBundleInfo({
+			category: category.value,
+			subCategory: subCategory.value,
+		});
+		categoryBundleInfo.value = res?.available ? res : null;
+	} catch (error) {
+		console.warn('获取分类整包信息失败:', error);
+		categoryBundleInfo.value = null;
+	} finally {
+		categoryBundleLoading.value = false;
+	}
+};
+
+const refreshAfterCategoryBundlePaid = async () => {
+	await Promise.all([fetchCategoryBundleInfo(), fetchCourseList(true)]);
+};
+
+const handleBuyCategoryBundle = async () => {
+	const info = categoryBundleInfo.value;
+	if (!info?.available || categoryBundleBuying.value || info.hasPurchasedAll) return;
+	if (!userStore.isLoggedIn) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none',
+		});
+		setTimeout(() => {
+			uni.navigateTo({
+				url: '/pages/login/index',
+			});
+		}, 800);
+		return;
+	}
+
+	try {
+		categoryBundleBuying.value = true;
+		const order = await createOrder({
+			order_type: 'category',
+			category_id: Number(info.categoryId),
+		});
+
+		if (!order?.payment_params) {
+			await userStore.fetchUserInfo();
+			await refreshAfterCategoryBundlePaid();
+			uni.showToast({ title: '购买成功', icon: 'success' });
+			return;
+		}
+
+		if (blockVirtualPaymentIfNotReady(order)) {
+			return;
+		}
+		await invokeVirtualPayment(order.payment_params);
+		await confirmWechatPayment({
+			order_no: order.order_no,
+		});
+		await userStore.fetchUserInfo();
+		await refreshAfterCategoryBundlePaid();
+		uni.showToast({ title: '购买成功', icon: 'success' });
+	} catch (error) {
+		console.error('购买分类课程失败:', error);
+		const errMsg = formatVirtualPaymentFailMessage(error);
+		uni.showToast({
+			title: errMsg,
+			icon: 'none',
+			duration: errMsg.includes('10 分钟') ? 3500 : 2000,
+		});
+	} finally {
+		categoryBundleBuying.value = false;
 	}
 };
 
@@ -442,6 +586,7 @@ onMounted(() => {
 	});
 
 	fetchCourseTypes();
+	fetchCategoryBundleInfo();
 	fetchCourseList(true);
 });
 </script>
@@ -540,6 +685,69 @@ $theme-color-light: #60A5FA;
 	align-items: center;
 	justify-content: center;
 	flex-shrink: 0;
+}
+
+.category-bundle-card {
+	margin-top: 16rpx;
+	min-height: 104rpx;
+	padding: 18rpx 20rpx;
+	border-radius: 20rpx;
+	background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(255, 90, 31, 0.08));
+	border: 1rpx solid rgba(37, 99, 235, 0.12);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16rpx;
+	box-sizing: border-box;
+
+	&.owned {
+		background: #f6faf7;
+		border-color: rgba(22, 163, 74, 0.16);
+	}
+}
+
+.category-bundle-main {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 6rpx;
+}
+
+.category-bundle-title {
+	font-size: 28rpx;
+	line-height: 1.35;
+	font-weight: 700;
+	color: $text-primary;
+	@include truncate;
+}
+
+.category-bundle-desc {
+	font-size: 22rpx;
+	line-height: 1.35;
+	color: #6b7280;
+	@include truncate;
+}
+
+.category-bundle-action {
+	min-width: 144rpx;
+	height: 58rpx;
+	padding: 0 18rpx;
+	border-radius: 999rpx;
+	background: #ff5a1f;
+	color: #fff;
+	font-size: 24rpx;
+	font-weight: 700;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	box-sizing: border-box;
+
+	&.disabled {
+		background: rgba(107, 114, 128, 0.16);
+		color: #6b7280;
+	}
 }
 
 .filter-bar {
