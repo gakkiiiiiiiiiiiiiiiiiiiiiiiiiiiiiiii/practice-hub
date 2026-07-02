@@ -293,6 +293,68 @@ const categoryBundleActionText = computed(() => {
 	return Number(info.price ?? 30) > 0 ? '购买合集' : '立即开通';
 });
 
+const normalizeCategoryText = (value) => String(value || '').trim();
+
+const isPlaceholderCategoryName = (value) => !normalizeCategoryText(value) || normalizeCategoryText(value) === '课程列表';
+
+const addUniqueCategoryCandidate = (list, candidate) => {
+	const normalized = {
+		category: normalizeCategoryText(candidate?.category),
+		subCategory: normalizeCategoryText(candidate?.subCategory),
+	};
+	if (!normalized.category && !normalized.subCategory) return;
+	const key = `${normalized.category}__${normalized.subCategory}`;
+	if (list.some((item) => `${item.category}__${item.subCategory}` === key)) return;
+	list.push(normalized);
+};
+
+const getCourseListCategoryParams = () => {
+	const params = {
+		category: normalizeCategoryText(category.value),
+		subCategory: normalizeCategoryText(subCategory.value),
+	};
+	const title = normalizeCategoryText(categoryName.value);
+	if (!params.category && !params.subCategory && !isPlaceholderCategoryName(title)) {
+		params.category = title;
+	}
+	return params;
+};
+
+const getInferredCourseCategoryCandidate = () => {
+	const courses = Array.isArray(courseList.value) ? courseList.value : [];
+	if (courses.length === 0) return null;
+	const categories = Array.from(new Set(courses.map((course) => normalizeCategoryText(course.category)).filter(Boolean)));
+	const subCategories = Array.from(
+		new Set(courses.map((course) => normalizeCategoryText(course.sub_category || course.subCategory)).filter(Boolean)),
+	);
+	if (categories.length !== 1 && subCategories.length !== 1) return null;
+	return {
+		category: categories.length === 1 ? categories[0] : '',
+		subCategory: subCategories.length === 1 ? subCategories[0] : '',
+	};
+};
+
+const getCategoryBundleParamCandidates = () => {
+	const candidates = [];
+	const title = normalizeCategoryText(categoryName.value);
+	const primary = normalizeCategoryText(category.value);
+	const secondary = normalizeCategoryText(subCategory.value);
+	const listParams = getCourseListCategoryParams();
+
+	if (primary && !secondary && !isPlaceholderCategoryName(title) && title !== primary) {
+		addUniqueCategoryCandidate(candidates, { category: primary, subCategory: title });
+	}
+
+	addUniqueCategoryCandidate(candidates, listParams);
+	addUniqueCategoryCandidate(candidates, { category: primary, subCategory: secondary });
+	if (!secondary && !isPlaceholderCategoryName(title)) {
+		addUniqueCategoryCandidate(candidates, { category: '', subCategory: title });
+	}
+
+	addUniqueCategoryCandidate(candidates, getInferredCourseCategoryCandidate());
+	return candidates;
+};
+
 const initNavbarMetrics = () => {
 	try {
 		const systemInfo = uni.getSystemInfoSync();
@@ -335,13 +397,14 @@ const fetchCourseList = async (reset = false) => {
 		}
 
 		const params = {};
+		const categoryParams = getCourseListCategoryParams();
 		
 		// 设置分类筛选参数（只传递有值的参数）
-		if (category.value) {
-			params.category = category.value;
+		if (categoryParams.category) {
+			params.category = categoryParams.category;
 		}
-		if (subCategory.value) {
-			params.subCategory = subCategory.value;
+		if (categoryParams.subCategory) {
+			params.subCategory = categoryParams.subCategory;
 		}
 
 		// 处理排序
@@ -388,17 +451,22 @@ const fetchCourseList = async (reset = false) => {
 };
 
 const fetchCategoryBundleInfo = async () => {
-	if (!category.value && !subCategory.value) {
+	const candidates = getCategoryBundleParamCandidates();
+	if (candidates.length === 0) {
 		categoryBundleInfo.value = null;
 		return;
 	}
 	categoryBundleLoading.value = true;
 	try {
-		const res = await getCategoryBundleInfo({
-			category: category.value,
-			subCategory: subCategory.value,
-		});
-		categoryBundleInfo.value = res?.available ? res : null;
+		let matchedInfo = null;
+		for (const params of candidates) {
+			const res = await getCategoryBundleInfo(params);
+			if (res?.available && Number(res.courseCount || 0) > 0) {
+				matchedInfo = res;
+				break;
+			}
+		}
+		categoryBundleInfo.value = matchedInfo;
 	} catch (error) {
 		console.warn('获取分类整包信息失败:', error);
 		categoryBundleInfo.value = null;
@@ -592,8 +660,9 @@ onMounted(() => {
 	});
 
 	fetchCourseTypes();
-	fetchCategoryBundleInfo();
-	fetchCourseList(true);
+	fetchCourseList(true).finally(() => {
+		fetchCategoryBundleInfo();
+	});
 });
 </script>
 

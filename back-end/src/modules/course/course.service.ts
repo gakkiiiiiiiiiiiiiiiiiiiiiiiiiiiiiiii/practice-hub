@@ -369,12 +369,11 @@ export class CourseService {
         .andWhere('category.name = :subCategory', { subCategory: normalizedSubCategory });
       if (normalizedCategory) {
         query.andWhere('parent.name = :category', { category: normalizedCategory });
-        query.andWhere('parent.status = :status', { status: 1 });
       }
       const matchedCategory = await query.getOne();
       if (!matchedCategory) return null;
       const parentCategory = matchedCategory.parent_id
-        ? await this.courseCategoryRepository.findOne({ where: { id: matchedCategory.parent_id, status: 1 } })
+        ? await this.courseCategoryRepository.findOne({ where: { id: matchedCategory.parent_id } })
         : null;
       if (!parentCategory) return null;
       return {
@@ -388,7 +387,6 @@ export class CourseService {
       where: {
         name: normalizedCategory,
         parent_id: null,
-        status: 1,
       },
     });
     if (!matchedCategory) return null;

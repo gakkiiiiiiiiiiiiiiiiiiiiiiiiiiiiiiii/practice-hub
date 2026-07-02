@@ -318,16 +318,16 @@ export class OrderService {
       throw new BadRequestException('分类ID不能为空');
     }
 
-    const category = await this.courseCategoryRepository.findOne({ where: { id: categoryId, status: 1 } });
+    const category = await this.courseCategoryRepository.findOne({ where: { id: categoryId } });
     if (!category) {
-      throw new NotFoundException('分类不存在或已下架');
+      throw new NotFoundException('分类不存在');
     }
 
     const parentCategory = category.parent_id
-      ? await this.courseCategoryRepository.findOne({ where: { id: category.parent_id, status: 1 } })
+      ? await this.courseCategoryRepository.findOne({ where: { id: category.parent_id } })
       : null;
     if (category.parent_id && !parentCategory) {
-      throw new BadRequestException('上级分类不存在或已下架');
+      throw new BadRequestException('上级分类不存在');
     }
 
     const primaryCategoryName = parentCategory?.name || category.name;
