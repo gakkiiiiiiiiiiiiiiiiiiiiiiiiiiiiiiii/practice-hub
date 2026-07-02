@@ -27,21 +27,35 @@
 			</view>
 			<view
 				v-if="showCategoryBundleEntry"
-				class="category-bundle-strip"
+				class="category-bundle-card"
 				:class="{ owned: categoryBundleInfo.hasPurchasedAll }"
 				@click="handleBuyCategoryBundle"
 			>
-				<view class="category-bundle-main">
+				<view class="category-bundle-visual">
+					<view class="bundle-folder bundle-folder-back"></view>
+					<view class="bundle-folder bundle-folder-front">
+						<app-icon name="book" :size="52" color="#ffffff" />
+					</view>
+					<text class="bundle-plus bundle-plus-one">+</text>
+					<text class="bundle-plus bundle-plus-two">+</text>
+				</view>
+				<view class="category-bundle-content">
 					<text class="category-bundle-title">{{ categoryBundleTitle }}</text>
-					<text class="category-bundle-status">{{ categoryBundleStatusText }}</text>
+					<text class="category-bundle-meta">{{ categoryBundleMetaText }}</text>
+					<view class="category-bundle-tags">
+						<text class="category-bundle-tag">优质资料</text>
+						<text class="category-bundle-tag">{{ categoryBundleStatusText }}</text>
+					</view>
 				</view>
 				<view
-					class="category-bundle-price"
+					class="category-bundle-action"
 					:class="{ disabled: categoryBundleInfo.hasPurchasedAll || categoryBundleBuying }"
 					@click.stop="handleBuyCategoryBundle"
 				>
-					<text class="category-bundle-price__amount">{{ categoryBundlePriceText }}</text>
-					<text class="category-bundle-price__status">{{ categoryBundleActionText }}</text>
+					<text class="category-bundle-price">{{ categoryBundlePriceText }}</text>
+					<view class="category-bundle-button">
+						<text>{{ categoryBundleActionText }}</text>
+					</view>
 				</view>
 			</view>
 		</view>
@@ -49,16 +63,24 @@
 		<!-- 排序筛选栏 -->
 		<view class="filter-bar" :style="filterBarStyle">
 			<view class="filter-main">
-				<view class="filter-item" :class="{ active: sortDropdownOpen || currentSort !== 'default' }" @click="toggleSortDropdown">
+				<view
+					class="filter-item"
+					:class="{ active: sortDropdownOpen || (currentSort !== 'default' && currentSort !== 'sales') }"
+					@click="toggleSortDropdown"
+				>
 					<text class="filter-text">{{ currentSortLabel }}</text>
-					<app-icon name="arrow-down" :size="22" :color="sortDropdownOpen || currentSort !== 'default' ? '#ff5a1f' : '#8b95a1'" />
+					<app-icon
+						name="arrow-down"
+						:size="22"
+						:color="sortDropdownOpen || (currentSort !== 'default' && currentSort !== 'sales') ? '#1767f2' : '#8b95a1'"
+					/>
 				</view>
 				<view class="filter-item" :class="{ active: currentSort === 'sales' }" @click="selectSort('sales')">
-					<text class="filter-text">销量</text>
+					<text class="filter-text">销量优先</text>
 				</view>
 				<view class="filter-item" :class="{ active: typeDropdownOpen || selectedCourseTypeId }" @click="toggleTypeDropdown">
 					<text class="filter-text">{{ selectedCourseTypeName || '课程类型' }}</text>
-					<app-icon name="arrow-down" :size="22" :color="typeDropdownOpen || selectedCourseTypeId ? '#ff5a1f' : '#8b95a1'" />
+					<app-icon name="arrow-down" :size="22" :color="typeDropdownOpen || selectedCourseTypeId ? '#1767f2' : '#8b95a1'" />
 				</view>
 			</view>
 			<view v-if="sortDropdownOpen" class="filter-dropdown">
@@ -123,20 +145,28 @@
 						<view class="course-title-wrapper">
 							<text class="course-title">{{ course.name }}</text>
 						</view>
-						<text class="course-desc">{{ course.description || course.name }}</text>
+						<text v-if="course.description && course.description !== course.name" class="course-desc">{{ course.description }}</text>
+						<text class="course-subtitle">{{ formatCourseSubtitle(course) }}</text>
 						<view class="course-tags-row">
 							<text v-if="course.courseType?.name" class="course-type-tag">{{ course.courseType.name }}</text>
 							<text v-if="formatCourseValidity(course)" class="validity-tag" :class="{ owned: course.hasAuth }">
 								{{ formatCourseValidity(course) }}
 							</text>
 						</view>
-						<view class="course-meta">
+						<view class="course-footer">
+							<view class="course-sales">
+								<text class="course-sales-icon">热</text>
+								<text class="course-sales-text">已售 {{ formatCourseSales(course) }}</text>
+							</view>
 							<view class="course-price">
 								<text v-if="Number(course.is_free) === 1 || Number(course.price) === 0" class="price-free">免费</text>
 								<text v-else class="price-current">¥{{ Number(course.price).toFixed(2) }}</text>
 								<text v-if="course.agent_price && Number(course.agent_price) > Number(course.price)" class="price-original">
 									¥{{ Number(course.agent_price).toFixed(2) }}
 								</text>
+							</view>
+							<view class="course-buy-btn" :class="{ owned: course.hasAuth }" @click.stop="handleCourseClick(course)">
+								<text>{{ course.hasAuth ? '去学习' : '去购买' }}</text>
 							</view>
 						</view>
 					</view>
@@ -241,10 +271,10 @@ const showCategoryBundleEntry = computed(() => {
 	return !!(info?.available && Number(info.courseCount || 0) > 0);
 });
 
-const categoryBundleExtraHeight = computed(() => (showCategoryBundleEntry.value ? 78 : 0));
+const categoryBundleExtraHeight = computed(() => (showCategoryBundleEntry.value ? 188 : 0));
 
 const filterBarStyle = computed(() => ({
-	top: `${navbarMetrics.value.height + uni.upx2px(104 + categoryBundleExtraHeight.value)}px`,
+	top: `${navbarMetrics.value.height + uni.upx2px(128 + categoryBundleExtraHeight.value)}px`,
 }));
 
 const searchSectionStyle = computed(() => ({
@@ -252,11 +282,11 @@ const searchSectionStyle = computed(() => ({
 }));
 
 const courseListContainerStyle = computed(() => ({
-	height: `calc(100vh - ${navbarMetrics.value.height}px - ${192 + categoryBundleExtraHeight.value}rpx)`,
+	height: `calc(100vh - ${navbarMetrics.value.height}px - ${224 + categoryBundleExtraHeight.value}rpx)`,
 }));
 
 const currentSortLabel = computed(() => {
-	if (currentSort.value === 'sales') return '销量';
+	if (currentSort.value === 'sales') return '综合';
 	return sortOptions.find((item) => item.value === currentSort.value)?.label || '综合';
 });
 
@@ -271,12 +301,18 @@ const categoryBundleStatusText = computed(() => {
 	const courseCount = Number(info.courseCount || 0);
 	const purchasedCount = Number(info.purchasedCount || 0);
 	if (info.hasPurchasedAll) {
-		return `已购买 · ${courseCount} 门可学`;
+		return '已拥有';
 	}
 	if (purchasedCount > 0) {
-		return `未全购 · ${purchasedCount}/${courseCount} 门已拥有`;
+		return `已拥有 ${purchasedCount}/${courseCount}`;
 	}
-	return `未购买 · ${courseCount} 门课程`;
+	return '未购买';
+});
+
+const categoryBundleMetaText = computed(() => {
+	const info = categoryBundleInfo.value || {};
+	const courseCount = Number(info.courseCount || 0);
+	return `${courseCount} 门课程 · 系统复习更高效`;
 });
 
 const categoryBundlePriceText = computed(() => {
@@ -610,6 +646,17 @@ const formatCourseValidity = (course) => {
 	return Number.isFinite(days) && days > 0 ? `有效期${days}天` : '';
 };
 
+const formatCourseSubtitle = (course) => {
+	const primary = course.category || category.value || '';
+	const secondary = course.sub_category || course.subCategory || subCategory.value || '';
+	return [primary, secondary].filter(Boolean).join(' · ') || course.description || course.name || '';
+};
+
+const formatCourseSales = (course) => {
+	const count = Number(course.student_count ?? course.studentCount ?? course.studyCount ?? course.sales ?? course.sold_count ?? 0);
+	return Number.isFinite(count) && count > 0 ? count : 0;
+};
+
 // 网格切换（暂时不做处理）
 const handleGridToggle = () => {
 	// TODO: 实现网格/列表切换
@@ -672,13 +719,13 @@ onMounted(() => {
 .course-list-page {
 	width: 100%;
 	min-height: 100vh;
-	background-color: $bg-secondary;
+	background-color: #f5f7fb;
 }
 
 // 主题色变量（蓝色）
-$theme-color: #596c8b;
-$theme-color-dark: #2563EB;
-$theme-color-light: #60A5FA;
+$theme-color: #3f7ff5;
+$theme-color-dark: #1767f2;
+$theme-color-light: #7eb2ff;
 
 // 顶部蓝色导航栏
 .top-header {
@@ -728,20 +775,20 @@ $theme-color-light: #60A5FA;
 .search-section {
 	position: sticky;
 	z-index: 99;
-	padding: 16rpx 24rpx;
-	background: $bg-primary;
-	border-bottom: 1rpx solid $border-light;
+	padding: 20rpx 28rpx 24rpx;
+	background: #ffffff;
 	box-sizing: border-box;
 }
 
 .search-box {
 	height: 72rpx;
-	padding: 0 22rpx;
+	padding: 0 28rpx;
 	border-radius: 36rpx;
-	background: #f5f7fb;
+	background: #f8faff;
+	border: 1rpx solid #dbe5f7;
 	display: flex;
 	align-items: center;
-	gap: 12rpx;
+	gap: 14rpx;
 	box-sizing: border-box;
 }
 
@@ -762,99 +809,201 @@ $theme-color-light: #60A5FA;
 	flex-shrink: 0;
 }
 
-.category-bundle-strip {
-	margin-top: 12rpx;
-	height: 66rpx;
-	padding: 0 10rpx 0 18rpx;
-	border-radius: 14rpx;
-	background: #f8fafc;
-	border: 1rpx solid #e6edf5;
+.category-bundle-card {
+	margin-top: 20rpx;
+	height: 168rpx;
+	padding: 20rpx 28rpx 20rpx 22rpx;
+	border-radius: 24rpx;
+	background: linear-gradient(135deg, #ffffff 0%, #f7fbff 100%);
+	border: 1rpx solid #d9e8ff;
+	box-shadow: 0 14rpx 34rpx rgba(28, 93, 190, 0.1);
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12rpx;
+	gap: 22rpx;
 	box-sizing: border-box;
+	position: relative;
+	overflow: hidden;
 
 	&.owned {
-		background: #f6faf7;
-		border-color: rgba(22, 163, 74, 0.16);
+		background: linear-gradient(135deg, #fbfffc 0%, #f1fbf5 100%);
+		border-color: rgba(22, 163, 74, 0.18);
 	}
 }
 
-.category-bundle-main {
+.category-bundle-visual {
+	width: 150rpx;
+	height: 128rpx;
+	position: relative;
+	flex-shrink: 0;
+}
+
+.bundle-folder {
+	position: absolute;
+	border-radius: 18rpx;
+	box-shadow: 0 12rpx 22rpx rgba(47, 109, 240, 0.18);
+}
+
+.bundle-folder-back {
+	left: 28rpx;
+	top: 8rpx;
+	width: 88rpx;
+	height: 84rpx;
+	background: linear-gradient(145deg, #9cc5ff 0%, #4d86f7 100%);
+	transform: rotate(8deg);
+	opacity: 0.75;
+}
+
+.bundle-folder-front {
+	left: 8rpx;
+	top: 24rpx;
+	width: 110rpx;
+	height: 88rpx;
+	background: linear-gradient(145deg, #87b8ff 0%, #2f6df0 100%);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+
+	&::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: -14rpx;
+		width: 58rpx;
+		height: 28rpx;
+		border-radius: 14rpx 14rpx 4rpx 4rpx;
+		background: #9ec5ff;
+	}
+}
+
+.bundle-plus {
+	position: absolute;
+	color: #a9c9ff;
+	font-size: 34rpx;
+	font-weight: 800;
+	line-height: 1;
+}
+
+.bundle-plus-one {
+	right: 10rpx;
+	top: 22rpx;
+}
+
+.bundle-plus-two {
+	right: 34rpx;
+	bottom: 18rpx;
+	font-size: 24rpx;
+	opacity: 0.75;
+}
+
+.category-bundle-content {
 	flex: 1;
 	min-width: 0;
 	display: flex;
-	align-items: center;
+	flex-direction: column;
+	align-items: flex-start;
 	gap: 10rpx;
 }
 
+.category-bundle-tags {
+	display: flex;
+	align-items: center;
+	gap: 10rpx;
+	max-width: 100%;
+}
+
 .category-bundle-title {
-	max-width: 280rpx;
-	font-size: 25rpx;
-	line-height: 1;
+	max-width: 300rpx;
+	font-size: 31rpx;
+	line-height: 1.2;
 	font-weight: 700;
 	color: $text-primary;
 	@include truncate;
 }
 
-.category-bundle-status {
-	max-width: 220rpx;
-	font-size: 21rpx;
-	line-height: 1;
-	color: #6b7280;
+.category-bundle-meta {
+	max-width: 300rpx;
+	font-size: 23rpx;
+	line-height: 1.2;
+	color: #667085;
 	@include truncate;
 }
 
-.category-bundle-price {
-	width: 144rpx;
-	height: 50rpx;
-	border-radius: 12rpx;
-	background: #ff5a1f;
-	color: #fff;
+.category-bundle-tag {
+	max-width: 148rpx;
+	height: 42rpx;
+	padding: 0 18rpx;
+	border-radius: 999rpx;
+	background: #eaf3ff;
+	color: #2f6df0;
+	font-size: 22rpx;
+	line-height: 42rpx;
+	box-sizing: border-box;
+	@include truncate;
+}
+
+.category-bundle-action {
+	width: 132rpx;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
+	gap: 14rpx;
 	flex-shrink: 0;
 	box-sizing: border-box;
 
 	&.disabled {
-		background: rgba(107, 114, 128, 0.16);
-		color: #6b7280;
+		.category-bundle-price {
+			color: #6b7280;
+		}
+
+		.category-bundle-button {
+			background: #e5e7eb;
+			color: #6b7280;
+		}
 	}
 }
 
-.category-bundle-price__amount {
-	font-size: 24rpx;
+.category-bundle-price {
+	font-size: 34rpx;
 	line-height: 1;
 	font-weight: 800;
+	color: #f04b1f;
 }
 
-.category-bundle-price__status {
-	margin-top: 4rpx;
-	font-size: 18rpx;
-	line-height: 1;
-	font-weight: 600;
+.category-bundle-button {
+	width: 126rpx;
+	height: 56rpx;
+	border-radius: 16rpx;
+	background: linear-gradient(135deg, #ff7a2f 0%, #ff3d18 100%);
+	color: #fff;
+	font-size: 23rpx;
+	font-weight: 700;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 10rpx 20rpx rgba(255, 82, 31, 0.22);
 }
 
 .filter-bar {
 	padding: 0;
-	background-color: $bg-primary;
-	border-bottom: 1rpx solid $border-light;
+	background-color: #ffffff;
 	position: sticky;
 	z-index: 99;
-	min-height: 88rpx;
+	min-height: 96rpx;
 	box-sizing: border-box;
+	border-radius: 18rpx 18rpx 0 0;
+	box-shadow: 0 12rpx 28rpx rgba(15, 23, 42, 0.07);
+	overflow: visible;
 }
 
 .filter-main {
-	height: 88rpx;
+	height: 96rpx;
 	display: flex;
 	align-items: center;
 	justify-content: flex-start;
-	padding: 0 28rpx;
-	gap: 46rpx;
+	padding: 0 52rpx;
+	gap: 72rpx;
 	box-sizing: border-box;
 }
 
@@ -864,13 +1013,25 @@ $theme-color-light: #60A5FA;
 	justify-content: center;
 	gap: 6rpx;
 	min-width: 96rpx;
-	height: 88rpx;
+	height: 96rpx;
 	position: relative;
 
 	&.active {
 		.filter-text {
-			color: #ff5a1f;
-			font-weight: $font-weight-medium;
+			color: #1767f2;
+			font-weight: 700;
+		}
+
+		&::after {
+			content: '';
+			position: absolute;
+			left: 50%;
+			bottom: 12rpx;
+			width: 40rpx;
+			height: 5rpx;
+			border-radius: 999rpx;
+			background: #1767f2;
+			transform: translateX(-50%);
 		}
 	}
 }
@@ -882,7 +1043,7 @@ $theme-color-light: #60A5FA;
 
 .filter-dropdown {
 	position: absolute;
-	top: 88rpx;
+	top: 96rpx;
 	left: 0;
 	right: 0;
 	background: #fff;
@@ -906,7 +1067,7 @@ $theme-color-light: #60A5FA;
 	box-sizing: border-box;
 
 	&.active {
-		color: #ff5a1f;
+		color: #1767f2;
 		font-weight: 700;
 	}
 }
@@ -914,31 +1075,36 @@ $theme-color-light: #60A5FA;
 // 课程列表
 .course-list-container {
 	width: 100%;
+	background: #f5f7fb;
 }
 
 .course-list {
-	padding: $space-4;
+	padding: 20rpx 22rpx 28rpx;
 }
 
 .course-item {
-	@include flex(row, flex-start, flex-start, $space-4);
-	@include card(sm);
-	padding: $space-4;
-	margin-bottom: $space-4;
-	background-color: $bg-primary;
+	display: flex;
+	align-items: stretch;
+	gap: 28rpx;
+	padding: 22rpx;
+	margin-bottom: 20rpx;
+	border-radius: 20rpx;
+	background-color: #ffffff;
+	box-shadow: 0 10rpx 26rpx rgba(15, 23, 42, 0.08);
 	cursor: pointer;
 	transition: all $transition-base;
+	box-sizing: border-box;
 
 	&:active {
 		transform: scale(0.98);
-		box-shadow: $shadow-xs;
+		box-shadow: 0 6rpx 18rpx rgba(15, 23, 42, 0.08);
 	}
 }
 
 .course-thumbnail {
-	width: 200rpx;
-	height: 200rpx;
-	border-radius: $radius-md;
+	width: 190rpx;
+	height: 190rpx;
+	border-radius: 14rpx;
 	overflow: hidden;
 	flex-shrink: 0;
 	background-color: $bg-tertiary;
@@ -959,42 +1125,51 @@ $theme-color-light: #60A5FA;
 
 .course-info {
 	flex: 1;
-	@include flex(column, flex-end, flex-end, $space-3);
 	min-width: 0;
-	height: 200rpx;
+	min-height: 190rpx;
+	display: flex;
+	flex-direction: column;
 	justify-content: space-between;
-	align-items: flex-end;
+	align-items: flex-start;
+	gap: 8rpx;
 }
 
 .course-title-wrapper {
 	width: 100%;
-	text-align: right;
+	text-align: left;
 }
 
 .course-title {
 	@include text(lg, bold, primary);
 	@include line-clamp(2);
 	width: 100%;
-	line-height: 1.5;
-	font-size: 32rpx;
-	color: $text-primary;
-	text-align: right;
+	line-height: 1.34;
+	font-size: 31rpx;
+	color: #101828;
+	text-align: left;
 }
 
 .course-desc {
 	@include text(sm, normal, tertiary);
 	@include line-clamp(1);
 	width: 100%;
-	line-height: 1.4;
-	color: $text-tertiary;
-	margin-top: $space-2;
-	text-align: right;
+	line-height: 1.3;
+	color: #667085;
+	text-align: left;
+}
+
+.course-subtitle {
+	width: 100%;
+	font-size: 24rpx;
+	line-height: 1.25;
+	color: #667085;
+	@include truncate;
 }
 
 .course-tags-row {
 	width: 100%;
 	display: flex;
-	justify-content: flex-end;
+	justify-content: flex-start;
 	align-items: center;
 	gap: 8rpx;
 	flex-wrap: wrap;
@@ -1003,18 +1178,18 @@ $theme-color-light: #60A5FA;
 .course-type-tag,
 .validity-tag {
 	max-width: 100%;
-	padding: 4rpx 12rpx;
+	padding: 7rpx 18rpx;
 	border-radius: 999rpx;
 	font-size: 22rpx;
-	line-height: 1.35;
+	line-height: 1.25;
 	color: #596c8b;
 	background: rgba(89, 108, 139, 0.1);
 	box-sizing: border-box;
 }
 
 .validity-tag {
-	color: #d97706;
-	background: rgba(245, 158, 11, 0.14);
+	color: #c76a17;
+	background: #fff0de;
 
 	&.owned {
 		color: #16a34a;
@@ -1022,38 +1197,89 @@ $theme-color-light: #60A5FA;
 	}
 }
 
-.course-meta {
-	@include flex(row, center, flex-end, 0);
+.course-footer {
 	width: 100%;
-	margin-top: auto;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 14rpx;
+	margin-top: 4rpx;
+}
+
+.course-sales {
+	display: flex;
+	align-items: center;
+	gap: 6rpx;
+	min-width: 92rpx;
+	flex-shrink: 0;
+}
+
+.course-sales-icon {
+	width: 28rpx;
+	height: 28rpx;
+	border-radius: 50%;
+	background: #ff6a2f;
+	color: #ffffff;
+	font-size: 17rpx;
+	font-weight: 700;
+	line-height: 28rpx;
+	text-align: center;
+}
+
+.course-sales-text {
+	font-size: 22rpx;
+	line-height: 1;
+	color: #7a8494;
+	white-space: nowrap;
 }
 
 .course-price {
-	@include flex(row, center, flex-end, $space-2);
-	width: 100%;
+	display: flex;
+	align-items: baseline;
 	justify-content: flex-end;
+	gap: 8rpx;
+	margin-left: auto;
+	min-width: 100rpx;
+	flex-shrink: 0;
 }
 
 .price-free {
 	@include text(lg, bold, success);
 	font-size: 32rpx;
 	color: $color-success;
-	text-align: right;
 }
 
 .price-current {
 	@include text(lg, bold, error);
-	font-size: 32rpx;
-	color: $color-error;
-	text-align: right;
+	font-size: 34rpx;
+	color: #ff3434;
 }
 
 .price-original {
 	@include text(sm, normal, tertiary);
 	text-decoration: line-through;
-	margin-left: $space-2;
 	color: $text-tertiary;
-	text-align: right;
+}
+
+.course-buy-btn {
+	width: 94rpx;
+	height: 48rpx;
+	border-radius: 999rpx;
+	border: 1rpx solid #ff3434;
+	color: #ff3434;
+	font-size: 24rpx;
+	font-weight: 600;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	box-sizing: border-box;
+
+	&.owned {
+		border-color: #16a34a;
+		color: #16a34a;
+		background: rgba(34, 197, 94, 0.08);
+	}
 }
 
 // 加载状态
