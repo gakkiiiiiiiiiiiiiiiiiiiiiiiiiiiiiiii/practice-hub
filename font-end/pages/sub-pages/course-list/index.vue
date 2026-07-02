@@ -32,12 +32,18 @@
 				@click="handleBuyCategoryBundle"
 			>
 				<view class="category-bundle-visual">
-					<view class="bundle-folder bundle-folder-back"></view>
-					<view class="bundle-folder bundle-folder-front">
-						<app-icon name="book" :size="52" color="#ffffff" />
+					<view class="bundle-stack-card bundle-stack-card-one"></view>
+					<view class="bundle-stack-card bundle-stack-card-two"></view>
+					<view class="bundle-stack-card bundle-stack-card-main">
+						<view class="bundle-stack-grid">
+							<view class="bundle-stack-tile"></view>
+							<view class="bundle-stack-tile"></view>
+							<view class="bundle-stack-tile"></view>
+							<view class="bundle-stack-tile"></view>
+						</view>
+						<text class="bundle-stack-label">合集</text>
 					</view>
-					<text class="bundle-plus bundle-plus-one">+</text>
-					<text class="bundle-plus bundle-plus-two">+</text>
+					<text class="bundle-stack-count">{{ categoryBundleCourseCountText }}</text>
 				</view>
 				<view class="category-bundle-content">
 					<text class="category-bundle-title">{{ categoryBundleTitle }}</text>
@@ -154,10 +160,6 @@
 							</text>
 						</view>
 						<view class="course-footer">
-							<view class="course-sales">
-								<text class="course-sales-icon">热</text>
-								<text class="course-sales-text">已售 {{ formatCourseSales(course) }}</text>
-							</view>
 							<view class="course-price">
 								<text v-if="Number(course.is_free) === 1 || Number(course.price) === 0" class="price-free">免费</text>
 								<text v-else class="price-current">¥{{ Number(course.price).toFixed(2) }}</text>
@@ -313,6 +315,12 @@ const categoryBundleMetaText = computed(() => {
 	const info = categoryBundleInfo.value || {};
 	const courseCount = Number(info.courseCount || 0);
 	return `${courseCount} 门课程 · 系统复习更高效`;
+});
+
+const categoryBundleCourseCountText = computed(() => {
+	const info = categoryBundleInfo.value || {};
+	const courseCount = Number(info.courseCount || 0);
+	return `${courseCount}门`;
 });
 
 const categoryBundlePriceText = computed(() => {
@@ -652,11 +660,6 @@ const formatCourseSubtitle = (course) => {
 	return [primary, secondary].filter(Boolean).join(' · ') || course.description || course.name || '';
 };
 
-const formatCourseSales = (course) => {
-	const count = Number(course.student_count ?? course.studentCount ?? course.studyCount ?? course.sales ?? course.sold_count ?? 0);
-	return Number.isFinite(count) && count > 0 ? count : 0;
-};
-
 // 网格切换（暂时不做处理）
 const handleGridToggle = () => {
 	// TODO: 实现网格/列表切换
@@ -838,62 +841,85 @@ $theme-color-light: #7eb2ff;
 	flex-shrink: 0;
 }
 
-.bundle-folder {
+.bundle-stack-card {
 	position: absolute;
-	border-radius: 18rpx;
-	box-shadow: 0 12rpx 22rpx rgba(47, 109, 240, 0.18);
+	border-radius: 20rpx;
+	box-shadow: 0 12rpx 24rpx rgba(47, 109, 240, 0.18);
+	box-sizing: border-box;
 }
 
-.bundle-folder-back {
-	left: 28rpx;
+.bundle-stack-card-one {
+	left: 42rpx;
 	top: 8rpx;
-	width: 88rpx;
-	height: 84rpx;
-	background: linear-gradient(145deg, #9cc5ff 0%, #4d86f7 100%);
-	transform: rotate(8deg);
-	opacity: 0.75;
+	width: 86rpx;
+	height: 92rpx;
+	background: linear-gradient(145deg, #dbeaff 0%, #8dbaff 100%);
+	transform: rotate(10deg);
+	opacity: 0.7;
 }
 
-.bundle-folder-front {
+.bundle-stack-card-two {
+	left: 24rpx;
+	top: 16rpx;
+	width: 92rpx;
+	height: 98rpx;
+	background: linear-gradient(145deg, #bdd7ff 0%, #5d93f7 100%);
+	transform: rotate(-7deg);
+	opacity: 0.82;
+}
+
+.bundle-stack-card-main {
 	left: 8rpx;
-	top: 24rpx;
-	width: 110rpx;
-	height: 88rpx;
-	background: linear-gradient(145deg, #87b8ff 0%, #2f6df0 100%);
+	top: 26rpx;
+	width: 112rpx;
+	height: 96rpx;
+	padding: 14rpx 14rpx 12rpx;
+	background: linear-gradient(145deg, #6fa7ff 0%, #2f6df0 100%);
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-
-	&::before {
-		content: '';
-		position: absolute;
-		left: 0;
-		top: -14rpx;
-		width: 58rpx;
-		height: 28rpx;
-		border-radius: 14rpx 14rpx 4rpx 4rpx;
-		background: #9ec5ff;
-	}
+	gap: 8rpx;
 }
 
-.bundle-plus {
-	position: absolute;
-	color: #a9c9ff;
-	font-size: 34rpx;
-	font-weight: 800;
+.bundle-stack-grid {
+	width: 64rpx;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6rpx;
+}
+
+.bundle-stack-tile {
+	width: 29rpx;
+	height: 20rpx;
+	border-radius: 5rpx;
+	background: rgba(255, 255, 255, 0.9);
+}
+
+.bundle-stack-label {
+	color: #ffffff;
+	font-size: 21rpx;
 	line-height: 1;
+	font-weight: 800;
 }
 
-.bundle-plus-one {
-	right: 10rpx;
-	top: 22rpx;
-}
-
-.bundle-plus-two {
-	right: 34rpx;
-	bottom: 18rpx;
-	font-size: 24rpx;
-	opacity: 0.75;
+.bundle-stack-count {
+	position: absolute;
+	right: 0;
+	bottom: 12rpx;
+	min-width: 54rpx;
+	height: 34rpx;
+	padding: 0 10rpx;
+	border-radius: 999rpx;
+	background: #ffffff;
+	border: 1rpx solid #cfe0ff;
+	color: #2f6df0;
+	font-size: 20rpx;
+	line-height: 34rpx;
+	font-weight: 800;
+	text-align: center;
+	box-shadow: 0 8rpx 16rpx rgba(47, 109, 240, 0.16);
+	box-sizing: border-box;
 }
 
 .category-bundle-content {
@@ -1201,36 +1227,9 @@ $theme-color-light: #7eb2ff;
 	width: 100%;
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
+	justify-content: flex-end;
 	gap: 14rpx;
 	margin-top: 4rpx;
-}
-
-.course-sales {
-	display: flex;
-	align-items: center;
-	gap: 6rpx;
-	min-width: 92rpx;
-	flex-shrink: 0;
-}
-
-.course-sales-icon {
-	width: 28rpx;
-	height: 28rpx;
-	border-radius: 50%;
-	background: #ff6a2f;
-	color: #ffffff;
-	font-size: 17rpx;
-	font-weight: 700;
-	line-height: 28rpx;
-	text-align: center;
-}
-
-.course-sales-text {
-	font-size: 22rpx;
-	line-height: 1;
-	color: #7a8494;
-	white-space: nowrap;
 }
 
 .course-price {
@@ -1238,7 +1237,6 @@ $theme-color-light: #7eb2ff;
 	align-items: baseline;
 	justify-content: flex-end;
 	gap: 8rpx;
-	margin-left: auto;
 	min-width: 100rpx;
 	flex-shrink: 0;
 }
