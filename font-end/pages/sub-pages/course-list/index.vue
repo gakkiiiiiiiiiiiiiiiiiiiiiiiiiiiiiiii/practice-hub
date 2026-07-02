@@ -462,10 +462,7 @@ const fetchCourseList = async (reset = false) => {
 			params.courseTypeId = selectedCourseTypeId.value;
 		}
 
-		console.log('获取课程列表参数:', params);
-
 		const res = await getAllCourses(params);
-		console.log('课程列表接口返回:', res);
 		
 		// 处理返回数据：request.js 已经提取了 data 字段，所以 res 应该是数组
 		// 但为了兼容，也检查 res.data 的情况
@@ -476,8 +473,6 @@ const fetchCourseList = async (reset = false) => {
 			console.warn('课程列表数据格式不正确:', res);
 			newCourses = [];
 		}
-		
-		console.log('处理后的课程列表:', newCourses);
 
 		// /app/courses 当前返回的是完整分类结果，不是分页结果。
 		// 触底时不能继续追加同一批数据，否则会造成列表无限重复加载。
@@ -702,12 +697,6 @@ onMounted(() => {
 	categoryName.value = decodeURIComponent(options.categoryName || options.subCategory || '课程列表');
 	category.value = options.category ? decodeURIComponent(options.category) : '';
 	subCategory.value = options.subCategory ? decodeURIComponent(options.subCategory) : '';
-
-	console.log('课程列表页面参数:', {
-		categoryName: categoryName.value,
-		category: category.value,
-		subCategory: subCategory.value,
-	});
 
 	fetchCourseTypes();
 	fetchCourseList(true).finally(() => {

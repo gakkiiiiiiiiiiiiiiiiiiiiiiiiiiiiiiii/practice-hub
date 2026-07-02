@@ -492,7 +492,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { onLoad, onReady, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app';
+import { onLoad, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app';
 import { useBankStore } from '@/store/bank';
 import { useUserStore } from '@/store/user';
 import AppCountdown from '@/components/app-countdown/app-countdown.vue';
@@ -578,7 +578,6 @@ onShareAppMessage(() => homeShare());
 onShareTimeline(() => toTimelineShare(homeShare()));
 
 onLoad((options) => {
-	console.log('页面 onLoad 执行', options);
 	const distributorCode = parseDistributorScene(options);
 	if (distributorCode) {
 		uni.setStorageSync('pending_distributor_code', distributorCode);
@@ -605,13 +604,8 @@ const parseDistributorScene = (options = {}) => {
 	return raw;
 };
 
-onReady(() => {
-	console.log('页面 onReady 执行');
-});
-
 onShow(() => {
 	captureReferralFromEnterOptions();
-	console.log('页面 onShow 执行');
 	// 页面显示时刷新数据，确保激活后的状态更新
 	// 无论是否登录都要刷新首页数据，因为首页内容对所有用户可见
 	fetchHomeData();
@@ -762,40 +756,16 @@ const safeBanners = computed(() => {
 		if (professionalModeEnabled.value) {
 			return [];
 		}
-		// #region agent log
-		console.log('[DEBUG-B] safeBanners - checking banners.value', {
-			hasBanners: !!banners,
-			hasValue: banners?.value !== undefined,
-			isArray: Array.isArray(banners?.value),
-			type: typeof banners?.value,
-			value: banners?.value,
-		});
-		// #endregion
 		if (!banners) {
-			// #region agent log
-			console.log('[DEBUG-B] safeBanners - banners ref is missing, returning []');
-			// #endregion
 			return [];
 		}
 		const value = banners.value;
 		if (value === undefined || value === null || !Array.isArray(value)) {
-			// #region agent log
-			console.log('[DEBUG-B] safeBanners - value is invalid, returning []', { value, type: typeof value });
-			// #endregion
 			return [];
 		}
-		// #region agent log
-		console.log('[DEBUG-B] safeBanners - result', {
-			resultLength: value.length,
-			isArray: Array.isArray(value),
-			hasResult: !!value,
-		});
-		// #endregion
 		return value;
 	} catch (e) {
-		// #region agent log
-		console.error('[DEBUG-B] safeBanners - ERROR', e?.message, e?.stack);
-		// #endregion
+		console.error('[safeBanners] Error:', e);
 		return [];
 	}
 });
@@ -1174,7 +1144,6 @@ const getProfessionalRecommendParams = () => {
 
 onMounted(() => {
 	deviceStore.refresh();
-	console.log('首页 Vue onMounted 执行');
 	loadProfessionalModeSelection();
 	checkGuideBubble();
 	calculateCountdown();
@@ -1414,7 +1383,6 @@ const fetchDailyQuote = async () => {
 	quoteLoading.value = true;
 	try {
 		const res = await getDailyQuote();
-		console.log('每日一句 API 返回:', res, typeof res);
 		let quotesArr = [];
 		if (res) {
 			// 处理不同的返回格式
@@ -1432,17 +1400,12 @@ const fetchDailyQuote = async () => {
 				quotesArr = [res];
 			}
 		}
-		console.log('处理后的 quotesArr:', quotesArr);
 		dailyQuotes.value = quotesArr.length > 0 ? quotesArr : ['研途漫漫，终抵群星。'];
-		console.log('最终 dailyQuotes.value:', dailyQuotes.value);
 	} catch (error) {
 		console.error('获取每日一句失败:', error);
 		dailyQuotes.value = ['研途漫漫，终抵群星。'];
 	} finally {
 		quoteLoading.value = false;
-		console.log('quoteLoading.value:', quoteLoading.value);
-		console.log('safeDailyQuotes.value:', safeDailyQuotes.value);
-		console.log('safeDailyQuotesLength.value:', safeDailyQuotesLength.value);
 	}
 };
 
@@ -1571,7 +1534,6 @@ const fetchHomeDataInner = async () => {
 	try {
 		// 获取首页配置（倒计时、轮播图等）
 		const configRes = await fetchHomeDataSection('首页配置', getHomeConfig, homeDataErrors);
-		console.log('首页配置数据:', configRes);
 		if (configRes) {
 			// 处理倒计时配置
 			if (configRes.countdown) {
@@ -1608,7 +1570,6 @@ const fetchHomeDataInner = async () => {
 			() => getRecommendCategories(recommendParams),
 			homeDataErrors,
 		);
-		console.log('推荐板块原始数据:', layoutRes);
 
 		if (layoutRes !== undefined) {
 			// 重置推荐板块列表
@@ -1622,8 +1583,6 @@ const fetchHomeDataInner = async () => {
 				console.warn('推荐板块数据格式不正确:', layoutRes);
 				categoriesData = [];
 			}
-
-			console.log('处理后的分类数据:', categoriesData);
 
 			if (categoriesData && Array.isArray(categoriesData) && categoriesData.length > 0) {
 				// 后端返回格式: [{ id, name, items: [课程列表] }, ...] - 首页推荐管理中设置的版块
@@ -1641,13 +1600,6 @@ const fetchHomeDataInner = async () => {
 						// 处理题库数据，确保字段映射正确
 						// 后端返回的 Subject 实体字段：id, name, cover_img, description, price 等
 						// 注意：对于付费课程，需要检查用户是否已购买（如果已登录）
-						// #region agent log
-						console.log('[DEBUG-D] Processing items', {
-							itemsLength: items?.length,
-							itemsIsArray: Array.isArray(items),
-							items: items,
-						});
-						// #endregion
 						const processedItems = Array.isArray(items)
 							? await Promise.all(
 									items
@@ -1705,26 +1657,8 @@ const fetchHomeDataInner = async () => {
 										}),
 								)
 							: [];
-						// #region agent log
-						console.log('[DEBUG-D] Processed items result', {
-							processedItemsLength: processedItems?.length,
-							processedItemsIsArray: Array.isArray(processedItems),
-							processedItems: processedItems,
-						});
-						// #endregion
-
-						// #region agent log
-						const finalItems = Array.isArray(processedItems) ? processedItems : [];
-						console.log('[DEBUG-E] Final category data', {
-							categoryName: category.name,
-							itemsLength: finalItems.length,
-							itemsIsArray: Array.isArray(finalItems),
-							processedItemsLength: processedItems?.length,
-							processedItemsIsArray: Array.isArray(processedItems),
-						});
-						// #endregion
-						// 确保 finalItems 始终是数组
-						const safeFinalItems = Array.isArray(finalItems) ? finalItems : [];
+						// 确保 safeFinalItems 始终是数组
+						const safeFinalItems = Array.isArray(processedItems) ? processedItems : [];
 						// 使用后端返回的 id 和 name
 						const categoryName = category.name || '推荐板块';
 						return {
@@ -1742,17 +1676,8 @@ const fetchHomeDataInner = async () => {
 					);
 					// 过滤掉空板块
 					recommendCategories.value = recommendCategories.value.filter((category) => {
-						// #region agent log
-						console.log('[DEBUG-F] Filtering category', {
-							hasCategory: !!category,
-							hasItems: !!category?.items,
-							itemsIsArray: Array.isArray(category?.items),
-							itemsLength: category?.items?.length,
-						});
-						// #endregion
 						return category != null && Array.isArray(category.items) && category.items.length > 0;
 					});
-					console.log('处理后的推荐板块:', recommendCategories.value);
 					recommendCategories.value.forEach((category) => {
 						if (category.type !== 'category') {
 							(category.items || []).forEach((course) => queueHomeRecommendCoverResolve(course));
@@ -1788,14 +1713,6 @@ const fetchHomeDataInner = async () => {
 							};
 						})
 						.filter((category) => {
-							// #region agent log
-							console.log('[DEBUG-G] Filtering category (compat)', {
-								hasCategory: !!category,
-								hasItems: !!category?.items,
-								itemsIsArray: Array.isArray(category?.items),
-								itemsLength: category?.items?.length,
-							});
-							// #endregion
 							return category != null && Array.isArray(category.items) && category.items.length > 0;
 						});
 				}
@@ -1925,16 +1842,6 @@ const handleCourseClick = async (course) => {
 		const isFree = Number(course.is_free) === 1;
 		const isPaid = price > 0 && !isFree;
 
-		console.log('点击课程:', {
-			id: course.id,
-			name: course.name,
-			price,
-			isFree,
-			isPaid,
-			isPaidAndNotPurchased: course.isPaidAndNotPurchased,
-			isLoggedIn: userStore.isLoggedIn,
-		});
-
 		let courseDetail = null;
 		const knownHasAuth = getKnownCourseAuth(course);
 		if (isPaid && userStore.isLoggedIn) {
@@ -2021,16 +1928,9 @@ const viewMore = (category) => {
 	uni.switchTab({ url: '/pages/bank/index' });
 };
 
-const handleImageError = (e) => {
-	console.log('图片加载失败:', e);
-};
+const handleImageError = () => {};
 
-const handleCourseCoverError = (course, e) => {
-	console.log('课程封面加载失败，尝试刷新缓存:', {
-		courseId: course?.id,
-		cover: course?.cover,
-		error: e,
-	});
+const handleCourseCoverError = (course) => {
 	if (!course?.id) return;
 	if (coverRetryTicks.value[course.id]) return;
 	coverRetryTicks.value = {
