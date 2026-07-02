@@ -446,12 +446,12 @@ const courseValidityText = computed(() => {
 	if (isPaperExamCourse.value) return '';
 	if (hasAuth.value) {
 		const expireTime = course.expireTime || course.expire_time;
-		if (!expireTime) return '永久有效';
+		if (!expireTime) return '长期有效';
 		const diffDays = Math.ceil((new Date(expireTime).getTime() - Date.now()) / 86400000);
 		if (!Number.isFinite(diffDays)) return '';
 		return diffDays > 0 ? `剩余${diffDays}天` : '已过期';
 	}
-	if (course.validity_days === null || course.validity_days === undefined) return '永久有效';
+	if (course.validity_days === null || course.validity_days === undefined) return '长期有效';
 	const days = Number(course.validity_days);
 	return Number.isFinite(days) && days > 0 ? `有效期${days}天` : '';
 });

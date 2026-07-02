@@ -640,10 +640,10 @@ const formatCourseValidity = (course) => {
 	const isFree = Number(course.is_free) === 1 || Number(course.price) === 0;
 	if (isFree) return '';
 	if (course.hasAuth) {
-		return formatRemainingDays(course.expireTime) || '永久有效';
+		return formatRemainingDays(course.expireTime) || '长期有效';
 	}
 	if (course.validity_days === null || course.validity_days === undefined) {
-		return '永久有效';
+		return '长期有效';
 	}
 	const days = Number(course.validity_days);
 	return Number.isFinite(days) && days > 0 ? `有效期${days}天` : '';
